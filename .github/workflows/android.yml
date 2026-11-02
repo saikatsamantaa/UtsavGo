@@ -1,0 +1,39 @@
+name: Build UtsavGo APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android project files
+        working-directory: utsavgo_app
+        run: flutter create --platforms=android --org com.example .
+
+      - name: Get dependencies
+        working-directory: utsavgo_app
+        run: flutter pub get
+
+      - name: Build APK
+        working-directory: utsavgo_app
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: UtsavGo-APK
+          path: utsavgo_app/build/app/outputs/flutter-apk/app-release.apk

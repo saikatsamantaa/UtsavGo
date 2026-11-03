@@ -1,5 +1,11 @@
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 void main() {
   runApp(const UtsavGoApp());
@@ -7,7 +13,6 @@ void main() {
 
 const purple = Color(0xFF7138C8);
 const darkPurple = Color(0xFF25143D);
-const backgroundColor = Color(0xFFF8F6FC);
 
 class UtsavGoApp extends StatelessWidget {
   const UtsavGoApp({super.key});
@@ -19,12 +24,8 @@ class UtsavGoApp extends StatelessWidget {
       title: 'UtsavGo',
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: purple,
-          primary: purple,
-        ),
-        scaffoldBackgroundColor: backgroundColor,
-        fontFamily: 'Roboto',
+        colorScheme: ColorScheme.fromSeed(seedColor: purple),
+        scaffoldBackgroundColor: const Color(0xFFF8F6FC),
       ),
       home: const HomeScreen(),
     );
@@ -40,73 +41,46 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int selectedIndex = 0;
-  int selectedCategory = 0;
-
-  final List<String> categories = [
-    'All',
-    'Puja',
-    'Concert',
-    'Sports',
-    'Fair',
-    'Expo',
-    'Education',
-    'Business',
-    'Political',
-    'Dance Academy',
-  ];
 
   @override
   Widget build(BuildContext context) {
+    final pages = [
+      const HomeContent(),
+      const Center(child: Text('Explore Events')),
+      const CreateEventScreen(),
+      const Center(child: Text('Following')),
+      const Center(child: Text('Your Profile')),
+    ];
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.white,
-        elevation: 0,
         title: const Row(
           children: [
-            Icon(Icons.celebration, color: purple, size: 30),
+            Icon(Icons.celebration, color: purple),
             SizedBox(width: 8),
             Text(
               'UtsavGo',
               style: TextStyle(
                 color: darkPurple,
                 fontWeight: FontWeight.bold,
-                fontSize: 23,
               ),
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            onPressed: () {},
-            icon: const Icon(
-              Icons.notifications_none,
-              color: darkPurple,
-            ),
-          ),
-          const SizedBox(width: 8),
-        ],
       ),
       body: IndexedStack(
         index: selectedIndex,
-        children: [
-          buildHome(),
-          const Center(child: Text('Explore Events')),
-          const CreateEventScreen(),
-          const Center(child: Text('Following')),
-          const Center(child: Text('Your Profile')),
-        ],
+        children: pages,
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedIndex,
         onDestinationSelected: (index) {
           setState(() => selectedIndex = index);
         },
-        backgroundColor: Colors.white,
-        indicatorColor: const Color(0xFFEDE2FC),
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
             label: 'Home',
           ),
           NavigationDestination(
@@ -129,12 +103,17 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+}
 
-  Widget buildHome() {
+class HomeContent extends StatelessWidget {
+  const HomeContent({super.key});
+
+  @override
+  Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const Text(
+      padding: const EdgeInsets.all(18),
+      children: const [
+        Text(
           'Discover Events',
           style: TextStyle(
             fontSize: 27,
@@ -142,168 +121,27 @@ class _HomeScreenState extends State<HomeScreen> {
             color: darkPurple,
           ),
         ),
-        const SizedBox(height: 5),
-        const Text(
-          'Discover. Connect. Celebrate.',
-          style: TextStyle(color: Colors.grey, fontSize: 14),
-        ),
-        const SizedBox(height: 20),
-        TextField(
-          decoration: InputDecoration(
-            hintText: 'Search events, places...',
-            prefixIcon: const Icon(Icons.search),
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(15),
-              borderSide: BorderSide.none,
-            ),
+        SizedBox(height: 5),
+        Text('Discover. Connect. Celebrate.'),
+        SizedBox(height: 22),
+        Text(
+          'Find Something Amazing!',
+          style: TextStyle(
+            color: purple,
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(height: 24),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [purple, Color(0xFF9A62E8)],
-            ),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Find Something Amazing!',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 21,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'Explore what is happening around you.',
-                style: TextStyle(color: Colors.white70),
-              ),
-              SizedBox(height: 12),
-              Icon(Icons.celebration, color: Colors.white, size: 38),
-            ],
-          ),
-        ),
-        const SizedBox(height: 25),
-        const Text(
-          'Categories',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 42,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: categories.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (context, index) {
-              final selected = selectedCategory == index;
-              return ChoiceChip(
-                label: Text(categories[index]),
-                selected: selected,
-                onSelected: (_) {
-                  setState(() => selectedCategory = index);
-                },
-                selectedColor: purple,
-                labelStyle: TextStyle(
-                  color: selected ? Colors.white : Colors.black87,
-                ),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 25),
-        const Text(
+        SizedBox(height: 10),
+        Text('Explore what is happening around you.'),
+        SizedBox(height: 25),
+        Text(
           'Nearby Events',
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
-        const SizedBox(height: 12),
-        eventCard(
-          'Durga Puja Celebration',
-          'Kolkata',
-          '25 October 2026',
-          Icons.temple_hindu,
-        ),
-        eventCard(
-          'Live Music Concert',
-          'Kolkata',
-          '28 October 2026',
-          Icons.music_note,
-        ),
-        eventCard(
-          'Local Sports Tournament',
-          'Paschim Medinipur',
-          '02 November 2026',
-          Icons.sports_cricket,
-        ),
+        SizedBox(height: 12),
+        Text('Your nearby events will appear here.'),
       ],
-    );
-  }
-
-  Widget eventCard(
-    String title,
-    String location,
-    String date,
-    IconData eventIcon,
-  ) {
-    return Card(
-      color: Colors.white,
-      elevation: 1,
-      margin: const EdgeInsets.only(bottom: 14),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(15),
-        child: Row(
-          children: [
-            Container(
-              height: 65,
-              width: 65,
-              decoration: BoxDecoration(
-                color: const Color(0xFFEDE2FC),
-                borderRadius: BorderRadius.circular(13),
-              ),
-              child: Icon(eventIcon, size: 32, color: purple),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    location,
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    date,
-                    style: const TextStyle(
-                      color: purple,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.arrow_forward_ios, size: 16),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -316,15 +154,16 @@ class CreateEventScreen extends StatefulWidget {
 }
 
 class _CreateEventScreenState extends State<CreateEventScreen> {
-  final _formKey = GlobalKey<FormState>();
+  final formKey = GlobalKey<FormState>();
+  final picker = ImagePicker();
 
-  final eventNameController = TextEditingController();
+  final nameController = TextEditingController();
   final locationController = TextEditingController();
   final landmarkController = TextEditingController();
   final descriptionController = TextEditingController();
-  final socialLinkController = TextEditingController();
+  final socialController = TextEditingController();
 
-  final List<String> eventCategories = [
+  final categories = [
     'Puja',
     'Concert',
     'Sports',
@@ -336,75 +175,26 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     'Dance Academy',
   ];
 
-  String selectedCategory = 'Puja';
-  DateTime? selectedDate;
-  TimeOfDay? selectedTime;
+  String category = 'Puja';
+  XFile? eventPhoto;
+  DateTime? eventDate;
+  TimeOfDay? eventTime;
+  LatLng? selectedLocation;
+  bool gettingLocation = false;
 
   @override
   void dispose() {
-    eventNameController.dispose();
+    nameController.dispose();
     locationController.dispose();
     landmarkController.dispose();
     descriptionController.dispose();
-    socialLinkController.dispose();
+    socialController.dispose();
     super.dispose();
   }
 
-  Future<void> chooseDate() async {
-    final now = DateTime.now();
-
-    final date = await showDatePicker(
-      context: context,
-      initialDate: selectedDate ?? now,
-      firstDate: DateTime(now.year, now.month, now.day),
-      lastDate: DateTime(now.year + 5),
-    );
-
-    if (date != null) {
-      setState(() => selectedDate = date);
-    }
-  }
-
-  Future<void> chooseTime() async {
-    final time = await showTimePicker(
-      context: context,
-      initialTime: selectedTime ?? TimeOfDay.now(),
-    );
-
-    if (time != null) {
-      setState(() => selectedTime = time);
-    }
-  }
-
-  void submitEvent() {
-    if (!_formKey.currentState!.validate()) return;
-
-    if (selectedDate == null || selectedTime == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select event date and time.'),
-        ),
-      );
-      return;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Form completed! Database connection will be added next.',
-        ),
-      ),
-    );
-  }
-
-  InputDecoration fieldDecoration(
-    String label,
-    IconData icon, {
-    String? hint,
-  }) {
+  InputDecoration decoration(String label, IconData icon) {
     return InputDecoration(
       labelText: label,
-      hintText: hint,
       prefixIcon: Icon(icon, color: purple),
       filled: true,
       fillColor: Colors.white,
@@ -414,23 +204,213 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
-        borderSide: BorderSide(color: Colors.grey.shade200),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(13),
-        borderSide: const BorderSide(color: purple, width: 1.5),
+        borderSide: BorderSide(color: Colors.grey.shade300),
       ),
     );
   }
 
-  String formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
+  Future<void> pickPhoto(ImageSource source) async {
+    try {
+      final photo = await picker.pickImage(
+        source: source,
+        imageQuality: 80,
+        maxWidth: 1600,
+      );
+
+      if (photo != null) {
+        setState(() => eventPhoto = photo);
+      }
+    } catch (e) {
+      showMessage('Photo select nahi ho payi.');
+    }
+  }
+
+  Future<void> showPhotoOptions() async {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Choose from Gallery'),
+              onTap: () {
+                Navigator.pop(context);
+                pickPhoto(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Take Photo'),
+              onTap: () {
+                Navigator.pop(context);
+                pickPhoto(ImageSource.camera);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> getCurrentLocation() async {
+    setState(() => gettingLocation = true);
+
+    try {
+      bool enabled = await Geolocator.isLocationServiceEnabled();
+
+      if (!enabled) {
+        showMessage('Phone ka Location/GPS ON karo.');
+        return;
+      }
+
+      LocationPermission permission =
+          await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        showMessage('Location permission nahi mili.');
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition();
+
+      setState(() {
+        selectedLocation = LatLng(
+          position.latitude,
+          position.longitude,
+        );
+      });
+
+      locationController.text =
+          '${position.latitude}, ${position.longitude}';
+
+      showMessage('Current location select ho gayi.');
+    } catch (e) {
+      showMessage('Location nahi mil payi. Dobara try karo.');
+    } finally {
+      if (mounted) {
+        setState(() => gettingLocation = false);
+      }
+    }
+  }
+
+  Future<void> chooseMapLocation() async {
+    final result = await Navigator.push<LatLng>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MapPickerScreen(
+          initialLocation: selectedLocation,
+        ),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        selectedLocation = result;
+        locationController.text =
+            '${result.latitude}, ${result.longitude}';
+      });
+    }
+  }
+
+  Future<void> chooseDate() async {
+    final now = DateTime.now();
+
+    final result = await showDatePicker(
+      context: context,
+      initialDate: eventDate ?? now,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: DateTime(now.year + 5),
+    );
+
+    if (result != null) {
+      setState(() => eventDate = result);
+    }
+  }
+
+  Future<void> chooseTime() async {
+    final result = await showTimePicker(
+      context: context,
+      initialTime: eventTime ?? TimeOfDay.now(),
+    );
+
+    if (result != null) {
+      setState(() => eventTime = result);
+    }
+  }
+
+  void copyText(String value) {
+    if (value.trim().isEmpty) {
+      showMessage('Pehle location enter karo.');
+      return;
+    }
+
+    Clipboard.setData(ClipboardData(text: value));
+    showMessage('Copied!');
+  }
+
+  Future<void> openMaps() async {
+    Uri? uri;
+
+    if (selectedLocation != null) {
+      uri = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=${selectedLocation!.latitude},${selectedLocation!.longitude}',
+      );
+    } else if (locationController.text.trim().isNotEmpty) {
+      final query = Uri.encodeComponent(
+        '${locationController.text} ${landmarkController.text}',
+      );
+      uri = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=$query',
+      );
+    } else {
+      showMessage('Pehle location enter karo.');
+      return;
+    }
+
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  void showMessage(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  void submitEvent() {
+    if (!formKey.currentState!.validate()) return;
+
+    if (eventPhoto == null) {
+      showMessage('Event ki ek photo upload karo.');
+      return;
+    }
+
+    if (eventDate == null || eventTime == null) {
+      showMessage('Event ki date aur time select karo.');
+      return;
+    }
+
+    if (locationController.text.trim().isEmpty) {
+      showMessage('Event ki location enter karo.');
+      return;
+    }
+
+    showMessage(
+      'Form complete! Online submission abhi connect nahi hai.',
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Form(
-      key: _formKey,
+      key: formKey,
       child: ListView(
         padding: const EdgeInsets.all(18),
         children: [
@@ -443,143 +423,207 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             ),
           ),
           const SizedBox(height: 6),
+          const Text('Share an event happening near you.'),
+          const SizedBox(height: 22),
+
+          // Only one photo
           const Text(
-            'Share something exciting happening near you.',
-            style: TextStyle(color: Colors.grey, fontSize: 14),
+            'Event Photo (1 photo only)',
+            style: TextStyle(fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 10),
+
+          InkWell(
+            onTap: showPhotoOptions,
+            child: Container(
+              height: 175,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: eventPhoto == null
+                  ? const Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add_a_photo, size: 42, color: purple),
+                        SizedBox(height: 8),
+                        Text('Add one event photo'),
+                        Text(
+                          'Gallery or Camera • No videos',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    )
+                  : Stack(
+                      children: [
+                        Positioned.fill(
+                          child: Image.network(
+                            eventPhoto!.path,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) {
+                              return const Center(
+                                child: Icon(Icons.image, size: 50),
+                              );
+                            },
+                          ),
+                        ),
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: IconButton.filled(
+                            onPressed: () {
+                              setState(() => eventPhoto = null);
+                            },
+                            icon: const Icon(Icons.delete),
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
 
           TextFormField(
-            controller: eventNameController,
-            decoration: fieldDecoration(
-              'Event name',
-              Icons.celebration,
-              hint: 'Enter event name',
-            ),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Please enter event name';
-              }
-              return null;
-            },
+            controller: nameController,
+            decoration: decoration('Event name', Icons.celebration),
+            validator: (v) =>
+                v == null || v.trim().isEmpty ? 'Enter event name' : null,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 15),
 
           DropdownButtonFormField<String>(
-            value: selectedCategory,
-            decoration: fieldDecoration(
-              'Event category',
-              Icons.category_outlined,
-            ),
-            items: eventCategories.map((category) {
-              return DropdownMenuItem(
-                value: category,
-                child: Text(category),
-              );
+            value: category,
+            decoration: decoration('Category', Icons.category),
+            items: categories.map((item) {
+              return DropdownMenuItem(value: item, child: Text(item));
             }).toList(),
             onChanged: (value) {
-              if (value != null) {
-                setState(() => selectedCategory = value);
-              }
+              if (value != null) setState(() => category = value);
             },
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 22),
+
+          const Text(
+            'Event Location',
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          OutlinedButton.icon(
+            onPressed: gettingLocation ? null : getCurrentLocation,
+            icon: const Icon(Icons.my_location),
+            label: Text(
+              gettingLocation ? 'Getting location...' : 'Use Current Location',
+            ),
+          ),
+          OutlinedButton.icon(
+            onPressed: chooseMapLocation,
+            icon: const Icon(Icons.map_outlined),
+            label: const Text('Select Location on Map'),
+          ),
+
+          const SizedBox(height: 10),
 
           TextFormField(
             controller: locationController,
-            decoration: fieldDecoration(
-              'Location / Area',
-              Icons.location_on_outlined,
-              hint: 'Example: Kolkata',
+            decoration: decoration(
+              'Location / Area (manual entry allowed)',
+              Icons.location_on,
             ),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Please enter location';
-              }
-              return null;
-            },
+            validator: (v) =>
+                v == null || v.trim().isEmpty ? 'Enter location' : null,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
 
           TextFormField(
             controller: landmarkController,
-            decoration: fieldDecoration(
-              'Landmark',
-              Icons.place_outlined,
-              hint: 'Example: Near railway station',
+            decoration: decoration(
+              'Landmark (manual entry)',
+              Icons.place,
             ),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Please enter a landmark';
-              }
-              return null;
-            },
           ),
-          const SizedBox(height: 16),
 
-          InkWell(
-            onTap: chooseDate,
-            child: InputDecorator(
-              decoration: fieldDecoration(
-                'Event date',
-                Icons.calendar_month,
-              ),
-              child: Text(
-                selectedDate == null
-                    ? 'Select event date'
-                    : formatDate(selectedDate!),
-                style: TextStyle(
-                  color: selectedDate == null
-                      ? Colors.grey.shade600
-                      : Colors.black87,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
 
-          InkWell(
-            onTap: chooseTime,
-            child: InputDecorator(
-              decoration: fieldDecoration(
-                'Event time',
-                Icons.access_time,
+          Wrap(
+            spacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => copyText(locationController.text),
+                icon: const Icon(Icons.copy),
+                label: const Text('Copy Location'),
               ),
-              child: Text(
-                selectedTime == null
-                    ? 'Select event time'
-                    : selectedTime!.format(context),
-                style: TextStyle(
-                  color: selectedTime == null
-                      ? Colors.grey.shade600
-                      : Colors.black87,
-                ),
+              OutlinedButton.icon(
+                onPressed: () => copyText(landmarkController.text),
+                icon: const Icon(Icons.copy),
+                label: const Text('Copy Landmark'),
               ),
+              OutlinedButton.icon(
+                onPressed: openMaps,
+                icon: const Icon(Icons.map),
+                label: const Text('Open Maps'),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 22),
+
+          const Text(
+            'Event Date & Time',
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
+
+          OutlinedButton.icon(
+            onPressed: chooseDate,
+            icon: const Icon(Icons.calendar_month),
+            label: Text(
+              eventDate == null
+                  ? 'Select Event Date'
+                  : '${eventDate!.day}/${eventDate!.month}/${eventDate!.year}',
+            ),
+          ),
+
+          OutlinedButton.icon(
+            onPressed: chooseTime,
+            icon: const Icon(Icons.access_time),
+            label: Text(
+              eventTime == null
+                  ? 'Select Event Time'
+                  : eventTime!.format(context),
+            ),
+          ),
+
+          const SizedBox(height: 18),
 
           TextFormField(
             controller: descriptionController,
             maxLines: 4,
-            decoration: fieldDecoration(
-              'Event description',
-              Icons.description_outlined,
-              hint: 'Tell people about this event',
+            decoration: decoration(
+              'Event Description',
+              Icons.description,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 15),
 
           TextFormField(
-            controller: socialLinkController,
-            keyboardType: TextInputType.url,
-            decoration: fieldDecoration(
-              'Social media link (optional)',
+            controller: socialController,
+            decoration: decoration(
+              'Social Link (Optional)',
               Icons.link,
-              hint: 'Instagram, Facebook, etc.',
             ),
+            keyboardType: TextInputType.url,
           ),
-          const SizedBox(height: 24),
+
+          const SizedBox(height: 25),
 
           SizedBox(
             height: 52,
@@ -588,31 +632,100 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               icon: const Icon(Icons.send),
               label: const Text(
                 'Submit Event',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 16),
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: purple,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
               ),
             ),
           ),
-          const SizedBox(height: 14),
+
+          const SizedBox(height: 15),
           const Text(
-            'Note: Events will need admin approval before appearing publicly.',
+            'Events require admin approval before appearing publicly.',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.grey,
-              fontSize: 12,
-            ),
+            style: TextStyle(color: Colors.grey, fontSize: 12),
           ),
-          const SizedBox(height: 25),
         ],
+      ),
+    );
+  }
+}
+
+class MapPickerScreen extends StatefulWidget {
+  final LatLng? initialLocation;
+
+  const MapPickerScreen({
+    super.key,
+    this.initialLocation,
+  });
+
+  @override
+  State<MapPickerScreen> createState() => _MapPickerScreenState();
+}
+
+class _MapPickerScreenState extends State<MapPickerScreen> {
+  late LatLng currentPoint;
+
+  @override
+  void initState() {
+    super.initState();
+    currentPoint = widget.initialLocation ??
+        const LatLng(22.5726, 88.3639);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Select Event Location'),
+        backgroundColor: Colors.white,
+      ),
+      body: FlutterMap(
+        options: MapOptions(
+          initialCenter: currentPoint,
+          initialZoom: 13,
+          onTap: (tapPosition, point) {
+            setState(() => currentPoint = point);
+          },
+        ),
+        children: [
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: 'com.example.utsavgo',
+          ),
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: currentPoint,
+                width: 50,
+                height: 50,
+                child: const Icon(
+                  Icons.location_pin,
+                  color: Colors.red,
+                  size: 45,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(15),
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: purple,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.all(15),
+            ),
+            onPressed: () {
+              Navigator.pop(context, currentPoint);
+            },
+            child: const Text('Confirm Location'),
+          ),
+        ),
       ),
     );
   }

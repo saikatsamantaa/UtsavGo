@@ -125,8 +125,10 @@ class _AuthScreenState extends State<AuthScreen> {
         showMessage('Login successful!');
       } else {
         final response = await client.auth.signUp(
-          email: email,
-          password: password,
+  email: email,
+  password: password,
+  emailRedirectTo: 'utsavgo://login-callback',
+
         );
 
         if (response.session == null) {

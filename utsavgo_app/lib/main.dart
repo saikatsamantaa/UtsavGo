@@ -16,6 +16,9 @@ const String supabaseUrl =
 const String supabasePublishableKey =
     'sb_publishable_YK1izeYNqP4sqTCiQ9W-7A_SPVD80Iv';
 
+const purple = Color(0xFF7138C8);
+const darkPurple = Color(0xFF25143D);
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -26,9 +29,6 @@ Future<void> main() async {
 
   runApp(const UtsavGoApp());
 }
-
-const purple = Color(0xFF7138C8);
-const darkPurple = Color(0xFF25143D);
 
 class UtsavGoApp extends StatelessWidget {
   const UtsavGoApp({super.key});
@@ -43,10 +43,247 @@ class UtsavGoApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: purple),
         scaffoldBackgroundColor: const Color(0xFFF8F6FC),
       ),
-      home: const HomeScreen(),
+      home: const AuthGate(),
     );
   }
 }
+
+// LOGIN SESSION CHECK
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final client = Supabase.instance.client;
+
+    return StreamBuilder<AuthState>(
+      stream: client.auth.onAuthStateChange,
+      builder: (context, snapshot) {
+        final session = client.auth.currentSession;
+
+        if (session == null) {
+          return const AuthScreen();
+        }
+
+        return const HomeScreen();
+      },
+    );
+  }
+}
+
+// LOGIN AND SIGNUP SCREEN
+
+class AuthScreen extends StatefulWidget {
+  const AuthScreen({super.key});
+
+  @override
+  State<AuthScreen> createState() => _AuthScreenState();
+}
+
+class _AuthScreenState extends State<AuthScreen> {
+  final formKey = GlobalKey<FormState>();
+  final emailController = TextEditingController();
+  final passwordController = TextEditingController();
+
+  bool isLogin = true;
+  bool loading = false;
+  bool hidePassword = true;
+
+  @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
+  void showMessage(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  Future<void> submit() async {
+    if (!formKey.currentState!.validate()) return;
+
+    setState(() => loading = true);
+
+    try {
+      final client = Supabase.instance.client;
+
+      final email = emailController.text.trim();
+      final password = passwordController.text;
+
+      if (isLogin) {
+        await client.auth.signInWithPassword(
+          email: email,
+          password: password,
+        );
+
+        showMessage('Login successful!');
+      } else {
+        final response = await client.auth.signUp(
+          email: email,
+          password: password,
+        );
+
+        if (response.session == null) {
+          showMessage(
+            'Account created! Email inbox check karo aur verification link open karo.',
+          );
+        } else {
+          showMessage('Account created successfully!');
+        }
+      }
+    } on AuthException catch (e) {
+      showMessage(e.message);
+    } catch (e) {
+      showMessage('Something went wrong. Please try again.');
+    } finally {
+      if (mounted) {
+        setState(() => loading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Form(
+              key: formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Icon(
+                    Icons.celebration,
+                    size: 75,
+                    color: purple,
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'UtsavGo',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 34,
+                      fontWeight: FontWeight.bold,
+                      color: darkPurple,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Discover. Connect. Celebrate.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 35),
+                  Text(
+                    isLogin ? 'Welcome Back!' : 'Create Your Account',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 23,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 25),
+                  TextFormField(
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: 'Email Address',
+                      prefixIcon: Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Email enter karo';
+                      }
+                      if (!value.contains('@') ||
+                          !value.contains('.')) {
+                        return 'Valid email enter karo';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: passwordController,
+                    obscureText: hidePassword,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        onPressed: () {
+                          setState(() {
+                            hidePassword = !hidePassword;
+                          });
+                        },
+                        icon: Icon(
+                          hidePassword
+                              ? Icons.visibility
+                              : Icons.visibility_off,
+                        ),
+                      ),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.length < 6) {
+                        return 'Password minimum 6 characters ka hona chahiye';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: loading ? null : submit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: purple,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: loading
+                          ? const CircularProgressIndicator(
+                              color: Colors.white,
+                            )
+                          : Text(
+                              isLogin ? 'LOGIN' : 'CREATE ACCOUNT',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  TextButton(
+                    onPressed: loading
+                        ? null
+                        : () {
+                            setState(() {
+                              isLogin = !isLogin;
+                            });
+                          },
+                    child: Text(
+                      isLogin
+                          ? "New user? Create an account"
+                          : 'Already have an account? Login',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// HOME SCREEN
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -65,7 +302,7 @@ class _HomeScreenState extends State<HomeScreen> {
       const Center(child: Text('Explore Events')),
       const CreateEventScreen(),
       const Center(child: Text('Following')),
-      const Center(child: Text('Your Profile')),
+      const ProfileScreen(),
     ];
 
     return Scaffold(
@@ -121,6 +358,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+// HOME CONTENT
+
 class HomeContent extends StatelessWidget {
   const HomeContent({super.key});
 
@@ -153,7 +392,10 @@ class HomeContent extends StatelessWidget {
         SizedBox(height: 25),
         Text(
           'Nearby Events',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         SizedBox(height: 12),
         Text('Your nearby events will appear here.'),
@@ -161,6 +403,67 @@ class HomeContent extends StatelessWidget {
     );
   }
 }
+
+// PROFILE AND LOGOUT
+
+class ProfileScreen extends StatelessWidget {
+  const ProfileScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final user = Supabase.instance.client.auth.currentUser;
+
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        const Icon(
+          Icons.account_circle,
+          size: 90,
+          color: purple,
+        ),
+        const SizedBox(height: 15),
+        const Text(
+          'My Profile',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          user?.email ?? 'User',
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 30),
+        ElevatedButton.icon(
+          onPressed: () async {
+            try {
+              await Supabase.instance.client.auth.signOut();
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Logout nahi ho paya.'),
+                  ),
+                );
+              }
+            }
+          },
+          icon: const Icon(Icons.logout),
+          label: const Text('Logout'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: purple,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.all(15),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// CREATE EVENT SCREEN
 
 class CreateEventScreen extends StatefulWidget {
   const CreateEventScreen({super.key});
@@ -434,7 +737,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     }
 
     showMessage(
-      'Supabase connected! Event online submission abhi next step mein banega.',
+      'Login successful! Online event submission next step mein connect hoga.',
     );
   }
 
@@ -522,10 +825,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           const SizedBox(height: 20),
           TextFormField(
             controller: nameController,
-            decoration: decoration(
-              'Event name',
-              Icons.celebration,
-            ),
+            decoration: decoration('Event name', Icons.celebration),
             validator: (v) =>
                 v == null || v.trim().isEmpty
                     ? 'Enter event name'
@@ -557,8 +857,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           ),
           const SizedBox(height: 10),
           OutlinedButton.icon(
-            onPressed:
-                gettingLocation ? null : getCurrentLocation,
+            onPressed: gettingLocation ? null : getCurrentLocation,
             icon: const Icon(Icons.my_location),
             label: Text(
               gettingLocation
@@ -596,14 +895,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             spacing: 8,
             children: [
               OutlinedButton.icon(
-                onPressed: () =>
-                    copyText(locationController.text),
+                onPressed: () => copyText(locationController.text),
                 icon: const Icon(Icons.copy),
                 label: const Text('Copy Location'),
               ),
               OutlinedButton.icon(
-                onPressed: () =>
-                    copyText(landmarkController.text),
+                onPressed: () => copyText(landmarkController.text),
                 icon: const Icon(Icons.copy),
                 label: const Text('Copy Landmark'),
               ),
@@ -690,6 +987,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   }
 }
 
+// MAP PICKER
+
 class MapPickerScreen extends StatefulWidget {
   final LatLng? initialLocation;
 
@@ -699,8 +998,7 @@ class MapPickerScreen extends StatefulWidget {
   });
 
   @override
-  State<MapPickerScreen> createState() =>
-      _MapPickerScreenState();
+  State<MapPickerScreen> createState() => _MapPickerScreenState();
 }
 
 class _MapPickerScreenState extends State<MapPickerScreen> {

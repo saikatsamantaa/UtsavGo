@@ -8,8 +8,22 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-void main() {
+const String supabaseUrl =
+    'https://lutcdpnwhpwadxttlgze.supabase.co';
+
+const String supabasePublishableKey =
+    'sb_publishable_YK1izeYNqP4sqTCiQ9W-7A_SPVD80Iv';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Supabase.initialize(
+    url: supabaseUrl,
+    anonKey: supabasePublishableKey,
+  );
+
   runApp(const UtsavGoApp());
 }
 
@@ -266,7 +280,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         return;
       }
 
-      LocationPermission permission = await Geolocator.checkPermission();
+      LocationPermission permission =
+          await Geolocator.checkPermission();
 
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -369,6 +384,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       final query = Uri.encodeComponent(
         '${locationController.text} ${landmarkController.text}',
       );
+
       uri = Uri.parse(
         'https://www.google.com/maps/search/?api=1&query=$query',
       );
@@ -383,7 +399,9 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         mode: LaunchMode.externalApplication,
       );
 
-      if (!opened) showMessage('Google Maps open nahi ho paya.');
+      if (!opened) {
+        showMessage('Google Maps open nahi ho paya.');
+      }
     } catch (e) {
       showMessage('Google Maps open nahi ho paya.');
     }
@@ -416,7 +434,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     }
 
     showMessage(
-      'Form complete! Online submission abhi connect nahi hai.',
+      'Supabase connected! Event online submission abhi next step mein banega.',
     );
   }
 
@@ -438,13 +456,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           const SizedBox(height: 6),
           const Text('Share an event happening near you.'),
           const SizedBox(height: 22),
-
           const Text(
             'Event Photo (1 photo only)',
             style: TextStyle(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 10),
-
           InkWell(
             onTap: showPhotoOptions,
             child: Container(
@@ -459,7 +475,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                   ? const Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.add_a_photo, size: 42, color: purple),
+                        Icon(
+                          Icons.add_a_photo,
+                          size: 42,
+                          color: purple,
+                        ),
                         SizedBox(height: 8),
                         Text('Add one event photo'),
                         Text(
@@ -499,40 +519,51 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                     ),
             ),
           ),
-
           const SizedBox(height: 20),
-
           TextFormField(
             controller: nameController,
-            decoration: decoration('Event name', Icons.celebration),
+            decoration: decoration(
+              'Event name',
+              Icons.celebration,
+            ),
             validator: (v) =>
-                v == null || v.trim().isEmpty ? 'Enter event name' : null,
+                v == null || v.trim().isEmpty
+                    ? 'Enter event name'
+                    : null,
           ),
           const SizedBox(height: 15),
-
           DropdownButtonFormField<String>(
             value: category,
             decoration: decoration('Category', Icons.category),
             items: categories.map((item) {
-              return DropdownMenuItem(value: item, child: Text(item));
+              return DropdownMenuItem(
+                value: item,
+                child: Text(item),
+              );
             }).toList(),
             onChanged: (value) {
-              if (value != null) setState(() => category = value);
+              if (value != null) {
+                setState(() => category = value);
+              }
             },
           ),
           const SizedBox(height: 22),
-
           const Text(
             'Event Location',
-            style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 10),
-
           OutlinedButton.icon(
-            onPressed: gettingLocation ? null : getCurrentLocation,
+            onPressed:
+                gettingLocation ? null : getCurrentLocation,
             icon: const Icon(Icons.my_location),
             label: Text(
-              gettingLocation ? 'Getting location...' : 'Use Current Location',
+              gettingLocation
+                  ? 'Getting location...'
+                  : 'Use Current Location',
             ),
           ),
           OutlinedButton.icon(
@@ -540,9 +571,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             icon: const Icon(Icons.map_outlined),
             label: const Text('Select Location on Map'),
           ),
-
           const SizedBox(height: 10),
-
           TextFormField(
             controller: locationController,
             decoration: decoration(
@@ -550,27 +579,31 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               Icons.location_on,
             ),
             validator: (v) =>
-                v == null || v.trim().isEmpty ? 'Enter location' : null,
+                v == null || v.trim().isEmpty
+                    ? 'Enter location'
+                    : null,
           ),
           const SizedBox(height: 12),
-
           TextFormField(
             controller: landmarkController,
-            decoration: decoration('Landmark (manual entry)', Icons.place),
+            decoration: decoration(
+              'Landmark (manual entry)',
+              Icons.place,
+            ),
           ),
-
           const SizedBox(height: 10),
-
           Wrap(
             spacing: 8,
             children: [
               OutlinedButton.icon(
-                onPressed: () => copyText(locationController.text),
+                onPressed: () =>
+                    copyText(locationController.text),
                 icon: const Icon(Icons.copy),
                 label: const Text('Copy Location'),
               ),
               OutlinedButton.icon(
-                onPressed: () => copyText(landmarkController.text),
+                onPressed: () =>
+                    copyText(landmarkController.text),
                 icon: const Icon(Icons.copy),
                 label: const Text('Copy Landmark'),
               ),
@@ -581,15 +614,15 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               ),
             ],
           ),
-
           const SizedBox(height: 22),
-
           const Text(
             'Event Date & Time',
-            style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 10),
-
           OutlinedButton.icon(
             onPressed: chooseDate,
             icon: const Icon(Icons.calendar_month),
@@ -599,7 +632,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                   : '${eventDate!.day}/${eventDate!.month}/${eventDate!.year}',
             ),
           ),
-
           OutlinedButton.icon(
             onPressed: chooseTime,
             icon: const Icon(Icons.access_time),
@@ -609,24 +641,25 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                   : eventTime!.format(context),
             ),
           ),
-
           const SizedBox(height: 18),
-
           TextFormField(
             controller: descriptionController,
             maxLines: 4,
-            decoration: decoration('Event Description', Icons.description),
+            decoration: decoration(
+              'Event Description',
+              Icons.description,
+            ),
           ),
           const SizedBox(height: 15),
-
           TextFormField(
             controller: socialController,
-            decoration: decoration('Social Link (Optional)', Icons.link),
+            decoration: decoration(
+              'Social Link (Optional)',
+              Icons.link,
+            ),
             keyboardType: TextInputType.url,
           ),
-
           const SizedBox(height: 25),
-
           SizedBox(
             height: 52,
             child: ElevatedButton.icon(
@@ -642,12 +675,14 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               ),
             ),
           ),
-
           const SizedBox(height: 15),
           const Text(
             'Events require admin approval before appearing publicly.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey, fontSize: 12),
+            style: TextStyle(
+              color: Colors.grey,
+              fontSize: 12,
+            ),
           ),
         ],
       ),
@@ -664,7 +699,8 @@ class MapPickerScreen extends StatefulWidget {
   });
 
   @override
-  State<MapPickerScreen> createState() => _MapPickerScreenState();
+  State<MapPickerScreen> createState() =>
+      _MapPickerScreenState();
 }
 
 class _MapPickerScreenState extends State<MapPickerScreen> {
@@ -673,7 +709,8 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   @override
   void initState() {
     super.initState();
-    currentPoint = widget.initialLocation ?? const LatLng(22.5726, 88.3639);
+    currentPoint =
+        widget.initialLocation ?? const LatLng(22.5726, 88.3639);
   }
 
   @override
@@ -693,7 +730,8 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
         ),
         children: [
           TileLayer(
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            urlTemplate:
+                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
             userAgentPackageName: 'com.example.utsavgo',
           ),
           MarkerLayer(

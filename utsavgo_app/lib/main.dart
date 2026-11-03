@@ -19,16 +19,44 @@ const String supabasePublishableKey =
 const purple = Color(0xFF7138C8);
 const darkPurple = Color(0xFF25143D);
 
+bool isUtsavGoAuthCallback(Uri uri) {
+  if (uri.scheme != 'utsavgo' ||
+      uri.host != 'login-callback') {
+    return false;
+  }
+
+  const authParameters = {
+    'access_token',
+    'code',
+    'error',
+    'error_code',
+    'error_description',
+  };
+
+  final fragmentParameters =
+      Uri.splitQueryString(uri.fragment);
+
+  return authParameters.any(
+    (parameter) =>
+        uri.queryParameters.containsKey(parameter) ||
+        fragmentParameters.containsKey(parameter),
+  );
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Supabase.initialize(
     url: supabaseUrl,
     anonKey: supabasePublishableKey,
+    authOptions: FlutterAuthClientOptions(
+      detectSessionInUriPredicate: isUtsavGoAuthCallback,
+    ),
   );
 
   runApp(const UtsavGoApp());
 }
+
 
 class UtsavGoApp extends StatelessWidget {
   const UtsavGoApp({super.key});

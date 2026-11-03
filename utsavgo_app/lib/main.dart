@@ -1,4 +1,6 @@
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -217,7 +219,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         maxWidth: 1600,
       );
 
-      if (photo != null) {
+      if (photo != null && mounted) {
         setState(() => eventPhoto = photo);
       }
     } catch (e) {
@@ -228,14 +230,14 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   Future<void> showPhotoOptions() async {
     showModalBottomSheet(
       context: context,
-      builder: (context) => SafeArea(
+      builder: (sheetContext) => SafeArea(
         child: Wrap(
           children: [
             ListTile(
               leading: const Icon(Icons.photo_library),
               title: const Text('Choose from Gallery'),
               onTap: () {
-                Navigator.pop(context);
+                Navigator.pop(sheetContext);
                 pickPhoto(ImageSource.gallery);
               },
             ),
@@ -243,7 +245,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               leading: const Icon(Icons.camera_alt),
               title: const Text('Take Photo'),
               onTap: () {
-                Navigator.pop(context);
+                Navigator.pop(sheetContext);
                 pickPhoto(ImageSource.camera);
               },
             ),
@@ -257,15 +259,14 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     setState(() => gettingLocation = true);
 
     try {
-      bool enabled = await Geolocator.isLocationServiceEnabled();
+      final enabled = await Geolocator.isLocationServiceEnabled();
 
       if (!enabled) {
         showMessage('Phone ka Location/GPS ON karo.');
         return;
       }
 
-      LocationPermission permission =
-          await Geolocator.checkPermission();
+      LocationPermission permission = await Geolocator.checkPermission();
 
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -278,6 +279,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       }
 
       final position = await Geolocator.getCurrentPosition();
+
+      if (!mounted) return;
 
       setState(() {
         selectedLocation = LatLng(
@@ -309,7 +312,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       ),
     );
 
-    if (result != null) {
+    if (result != null && mounted) {
       setState(() {
         selectedLocation = result;
         locationController.text =
@@ -328,7 +331,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       lastDate: DateTime(now.year + 5),
     );
 
-    if (result != null) {
+    if (result != null && mounted) {
       setState(() => eventDate = result);
     }
   }
@@ -339,27 +342,28 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       initialTime: eventTime ?? TimeOfDay.now(),
     );
 
-    if (result != null) {
+    if (result != null && mounted) {
       setState(() => eventTime = result);
     }
   }
 
-  void copyText(String value) {
+  Future<void> copyText(String value) async {
     if (value.trim().isEmpty) {
       showMessage('Pehle location enter karo.');
       return;
     }
 
-    Clipboard.setData(ClipboardData(text: value));
+    await Clipboard.setData(ClipboardData(text: value));
     showMessage('Copied!');
   }
 
   Future<void> openMaps() async {
-    Uri? uri;
+    Uri uri;
 
     if (selectedLocation != null) {
       uri = Uri.parse(
-        'https://www.google.com/maps/search/?api=1&query=${selectedLocation!.latitude},${selectedLocation!.longitude}',
+        'https://www.google.com/maps/search/?api=1&query='
+        '${selectedLocation!.latitude},${selectedLocation!.longitude}',
       );
     } else if (locationController.text.trim().isNotEmpty) {
       final query = Uri.encodeComponent(
@@ -373,7 +377,16 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       return;
     }
 
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    try {
+      final opened = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!opened) showMessage('Google Maps open nahi ho paya.');
+    } catch (e) {
+      showMessage('Google Maps open nahi ho paya.');
+    }
   }
 
   void showMessage(String message) {
@@ -426,7 +439,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           const Text('Share an event happening near you.'),
           const SizedBox(height: 22),
 
-          // Only one photo
           const Text(
             'Event Photo (1 photo only)',
             style: TextStyle(fontWeight: FontWeight.bold),
@@ -437,6 +449,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             onTap: showPhotoOptions,
             child: Container(
               height: 175,
+              clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(15),
@@ -456,22 +469,26 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                       ],
                     )
                   : Stack(
+                      fit: StackFit.expand,
                       children: [
-                        Positioned.fill(
-                          child: Image.network(
-                            eventPhoto!.path,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) {
-                              return const Center(
-                                child: Icon(Icons.image, size: 50),
-                              );
-                            },
-                          ),
+                        Image.file(
+                          File(eventPhoto!.path),
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Center(
+                              child: Icon(
+                                Icons.broken_image,
+                                size: 50,
+                                color: Colors.red,
+                              ),
+                            );
+                          },
                         ),
                         Positioned(
                           top: 8,
                           right: 8,
                           child: IconButton.filled(
+                            tooltip: 'Remove photo',
                             onPressed: () {
                               setState(() => eventPhoto = null);
                             },
@@ -507,10 +524,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
           const Text(
             'Event Location',
-            style: TextStyle(
-              fontSize: 19,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 10),
 
@@ -542,10 +556,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
           TextFormField(
             controller: landmarkController,
-            decoration: decoration(
-              'Landmark (manual entry)',
-              Icons.place,
-            ),
+            decoration: decoration('Landmark (manual entry)', Icons.place),
           ),
 
           const SizedBox(height: 10),
@@ -575,10 +586,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
           const Text(
             'Event Date & Time',
-            style: TextStyle(
-              fontSize: 19,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 10),
 
@@ -607,19 +615,13 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           TextFormField(
             controller: descriptionController,
             maxLines: 4,
-            decoration: decoration(
-              'Event Description',
-              Icons.description,
-            ),
+            decoration: decoration('Event Description', Icons.description),
           ),
           const SizedBox(height: 15),
 
           TextFormField(
             controller: socialController,
-            decoration: decoration(
-              'Social Link (Optional)',
-              Icons.link,
-            ),
+            decoration: decoration('Social Link (Optional)', Icons.link),
             keyboardType: TextInputType.url,
           ),
 
@@ -671,8 +673,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   @override
   void initState() {
     super.initState();
-    currentPoint = widget.initialLocation ??
-        const LatLng(22.5726, 88.3639);
+    currentPoint = widget.initialLocation ?? const LatLng(22.5726, 88.3639);
   }
 
   @override

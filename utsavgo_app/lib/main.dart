@@ -840,20 +840,29 @@ class EventDetailsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           Card(
-            child: ListTile(
-              leading: const CircleAvatar(child: Icon(Icons.person)),
-              title: Text((event['profiles'] is Map
-                  ? (event['profiles']['display_name'] ?? 'UtsavGo User').toString()
-                  : 'UtsavGo User')),
-              subtitle: const Text('Event Organizer'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                final creatorId = event['created_by']?.toString() ?? '';
-                if (creatorId.isNotEmpty) {
-                  Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => OrganizerProfileScreen(userId: creatorId),
-                  ));
-                }
+            child: FutureBuilder<Map<String, dynamic>?>(
+              future: Supabase.instance.client.from('profiles')
+                  .select('id, display_name, username')
+                  .eq('id', event['created_by']?.toString() ?? '')
+                  .maybeSingle(),
+              builder: (context, snapshot) {
+                final profile = snapshot.data ?? {};
+                return ListTile(
+                  leading: const CircleAvatar(child: Icon(Icons.person)),
+                  title: Text(profile['display_name']?.toString() ?? 'UtsavGo User'),
+                  subtitle: Text(profile['username'] == null
+                      ? 'Event Organizer'
+                      : '@${profile['username']} • Event Organizer'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    final creatorId = event['created_by']?.toString() ?? '';
+                    if (creatorId.isNotEmpty) {
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => OrganizerProfileScreen(userId: creatorId),
+                      ));
+                    }
+                  },
+                );
               },
             ),
           ),
@@ -1463,7 +1472,9 @@ class _PublicProfileContentState extends State<PublicProfileContent> {
   Future<List<dynamic>> loadData() async {
     final client = Supabase.instance.client;
     final followers = await client.from('user_follows').select('follower_id').eq('following_id', widget.userId);
-    final following = await client.from('user_follows').select('following_id').eq('follower_id', widget.userId);
+    final following = await client.from('user_follows')
+      .select('following_id, profiles!user_follows_following_id_fkey(id, display_name, username)')
+      .eq('follower_id', widget.userId).order('created_at', ascending: false);
     final events = await client.from('events').select('*').eq('created_by', widget.userId)
       .eq('status', 'approved').order('created_at', ascending: false);
     return [followers, following, events];
@@ -1493,6 +1504,21 @@ class _PublicProfileContentState extends State<PublicProfileContent> {
           Text('@${widget.profile['username'] ?? 'username'}', style: const TextStyle(color: Colors.grey)),
           const SizedBox(height: 14),
           FollowButton(userId: widget.userId),
+          const SizedBox(height: 20),
+          const Text('Following', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          if ((data[1] as List).isEmpty) const Text('Abhi kisi ko follow nahi kar raha.')
+          else ...(data[1] as List).map((row) {
+            final person = Map<String, dynamic>.from(row['profiles'] ?? {});
+            return ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const CircleAvatar(child: Icon(Icons.person)),
+              title: Text(person['display_name']?.toString() ?? 'UtsavGo User'),
+              subtitle: Text('@${person['username'] ?? ''}'),
+              onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => OrganizerProfileScreen(userId: person['id'].toString()))),
+            );
+          }),
           const SizedBox(height: 20),
           const Text('Events', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),

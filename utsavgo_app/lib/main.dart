@@ -431,7 +431,7 @@ class _HomeContentState extends State<HomeContent> {
   Future<List<Map<String, dynamic>>> fetchEvents() async {
     final response = await Supabase.instance.client
         .from('events')
-        .select('*, profiles!events_created_by_fkey(display_name)')
+        .select('*')
         .eq('status', 'approved')
         .order('event_date', ascending: true)
         .order('event_time', ascending: true);

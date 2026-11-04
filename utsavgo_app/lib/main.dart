@@ -1330,6 +1330,43 @@ class _MyEventsScreenState extends State<MyEventsScreen> {
     return List<Map<String, dynamic>>.from(rows);
   }
 
+  Future<void> editEvent(Map<String, dynamic> event) async {
+    final changed = await Navigator.push<bool>(context, MaterialPageRoute(
+      builder: (_) => EditEventScreen(event: event),
+    ));
+    if (changed == true && mounted) setState(() => future = loadEvents());
+  }
+
+  Future<void> deleteEvent(Map<String, dynamic> event) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete event?'),
+        content: Text('"${event['title'] ?? 'Event'}" ko permanently delete karna hai?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      final client = Supabase.instance.client;
+      final uid = client.auth.currentUser!.id;
+      await client.from('events').delete()
+        .eq('id', event['id'].toString()).eq('created_by', uid);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Event delete ho gaya.')));
+        setState(() => future = loadEvents());
+      }
+    } on PostgrestException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Delete nahi hua: ${e.message}')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Delete nahi hua: $e')));
+    }
+  }
+
   Color statusColor(String status) {
     if (status == 'approved') return Colors.green;
     if (status == 'rejected') return Colors.red;
@@ -1377,8 +1414,24 @@ class _MyEventsScreenState extends State<MyEventsScreen> {
                     child: Padding(
                     padding: const EdgeInsets.all(15),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(e['title']?.toString() ?? 'Event',
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      Row(children: [
+                        Expanded(child: Text(e['title']?.toString() ?? 'Event',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+                        PopupMenuButton<String>(
+                          tooltip: 'Manage post',
+                          onSelected: (value) {
+                            if (value == 'edit') editEvent(e);
+                            if (value == 'delete') deleteEvent(e);
+                          },
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(value: 'edit', child: ListTile(
+                              dense: true, leading: Icon(Icons.edit), title: Text('Edit post'))),
+                            PopupMenuItem(value: 'delete', child: ListTile(
+                              dense: true, leading: Icon(Icons.delete, color: Colors.red),
+                              title: Text('Delete post', style: TextStyle(color: Colors.red)))),
+                          ],
+                        ),
+                      ]),
                       const SizedBox(height: 8),
                       Text('Status: ${status.toUpperCase()}',
                           style: TextStyle(color: statusColor(status), fontWeight: FontWeight.bold)),
@@ -1410,6 +1463,191 @@ class _MyEventsScreenState extends State<MyEventsScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+
+// EDIT OWN EVENT POST
+class EditEventScreen extends StatefulWidget {
+  final Map<String, dynamic> event;
+  const EditEventScreen({super.key, required this.event});
+
+  @override
+  State<EditEventScreen> createState() => _EditEventScreenState();
+}
+
+class _EditEventScreenState extends State<EditEventScreen> {
+  final formKey = GlobalKey<FormState>();
+  late final TextEditingController titleController;
+  late final TextEditingController locationController;
+  late final TextEditingController landmarkController;
+  late final TextEditingController descriptionController;
+  late final TextEditingController socialController;
+  late DateTime eventDate;
+  late TimeOfDay eventTime;
+  late String category;
+  XFile? newPhoto;
+  bool saving = false;
+
+  final List<String> categories = ['Puja', 'Concert', 'Sports', 'Fair', 'Expo', 'Dance Academy', 'Other'];
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.event;
+    titleController = TextEditingController(text: e['title']?.toString() ?? '');
+    locationController = TextEditingController(text: e['location_text']?.toString() ?? '');
+    landmarkController = TextEditingController(text: e['landmark']?.toString() ?? '');
+    descriptionController = TextEditingController(text: e['description']?.toString() ?? '');
+    socialController = TextEditingController(text: e['social_link']?.toString() ?? '');
+    eventDate = DateTime.tryParse(e['event_date']?.toString() ?? '') ?? DateTime.now();
+    final timeParts = (e['event_time']?.toString() ?? '18:00').split(':');
+    eventTime = TimeOfDay(
+      hour: int.tryParse(timeParts[0]) ?? 18,
+      minute: timeParts.length > 1 ? (int.tryParse(timeParts[1]) ?? 0) : 0,
+    );
+    category = categories.contains(e['category']) ? e['category'].toString() : 'Other';
+  }
+
+  @override
+  void dispose() {
+    titleController.dispose();
+    locationController.dispose();
+    landmarkController.dispose();
+    descriptionController.dispose();
+    socialController.dispose();
+    super.dispose();
+  }
+
+  Future<void> choosePhoto() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+    if (picked != null && mounted) setState(() => newPhoto = picked);
+  }
+
+  Future<void> saveChanges() async {
+    if (saving || !formKey.currentState!.validate()) return;
+    setState(() => saving = true);
+    try {
+      final client = Supabase.instance.client;
+      final user = client.auth.currentUser!;
+      var photoUrl = widget.event['photo_url']?.toString();
+
+      if (newPhoto != null) {
+        final ext = newPhoto!.name.split('.').last.toLowerCase();
+        final path = '${user.id}/${DateTime.now().millisecondsSinceEpoch}.$ext';
+        final type = ext == 'png' ? 'image/png' : ext == 'webp' ? 'image/webp' : 'image/jpeg';
+        await client.storage.from('event-photos').uploadBinary(
+          path, await newPhoto!.readAsBytes(),
+          fileOptions: FileOptions(contentType: type),
+        );
+        photoUrl = client.storage.from('event-photos').getPublicUrl(path);
+      }
+
+      final date = '${eventDate.year.toString().padLeft(4, '0')}-'
+          '${eventDate.month.toString().padLeft(2, '0')}-'
+          '${eventDate.day.toString().padLeft(2, '0')}';
+      final time = '${eventTime.hour.toString().padLeft(2, '0')}:'
+          '${eventTime.minute.toString().padLeft(2, '0')}:00';
+
+      await client.from('events').update({
+        'title': titleController.text.trim(),
+        'category': category,
+        'location_text': locationController.text.trim(),
+        'landmark': landmarkController.text.trim().isEmpty ? null : landmarkController.text.trim(),
+        'event_date': date,
+        'event_time': time,
+        'description': descriptionController.text.trim(),
+        'social_link': socialController.text.trim().isEmpty ? null : socialController.text.trim(),
+        'photo_url': photoUrl,
+        'status': 'pending',
+        'rejection_reason': null,
+      }).eq('id', widget.event['id'].toString()).eq('created_by', user.id);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Post update ho gaya. Admin approval ke baad phir se public dikhega.')));
+      Navigator.pop(context, true);
+    } on PostgrestException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Update nahi hua: ${e.message}')));
+    } on StorageException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Photo upload nahi hua: ${e.message}')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Update nahi hua: $e')));
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final oldPhoto = widget.event['photo_url']?.toString() ?? '';
+    return Scaffold(
+      appBar: AppBar(title: const Text('Edit Event Post')),
+      body: Form(
+        key: formKey,
+        child: ListView(padding: const EdgeInsets.all(16), children: [
+          InkWell(
+            onTap: choosePhoto,
+            child: Container(
+              height: 180,
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+              clipBehavior: Clip.antiAlias,
+              child: newPhoto != null
+                ? Image.file(File(newPhoto!.path), fit: BoxFit.cover)
+                : oldPhoto.isNotEmpty
+                  ? Image.network(oldPhoto, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(Icons.add_a_photo, size: 45))
+                  : const Icon(Icons.add_a_photo, size: 45),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text('Photo change karne ke liye photo par tap karo.'),
+          const SizedBox(height: 16),
+          TextFormField(controller: titleController, decoration: const InputDecoration(labelText: 'Event name', border: OutlineInputBorder()),
+            validator: (v) => v == null || v.trim().isEmpty ? 'Event name enter karo' : null),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            value: category, decoration: const InputDecoration(labelText: 'Category', border: OutlineInputBorder()),
+            items: categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+            onChanged: (v) { if (v != null) setState(() => category = v); }),
+          const SizedBox(height: 12),
+          TextFormField(controller: locationController, decoration: const InputDecoration(labelText: 'Location', border: OutlineInputBorder()),
+            validator: (v) => v == null || v.trim().isEmpty ? 'Location enter karo' : null),
+          const SizedBox(height: 12),
+          TextFormField(controller: landmarkController, decoration: const InputDecoration(labelText: 'Landmark', border: OutlineInputBorder())),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final d = await showDatePicker(context: context, initialDate: eventDate,
+                firstDate: DateTime(2020), lastDate: DateTime(2100));
+              if (d != null) setState(() => eventDate = d);
+            },
+            icon: const Icon(Icons.calendar_month),
+            label: Text('Date: ${eventDate.day}/${eventDate.month}/${eventDate.year}')),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final t = await showTimePicker(context: context, initialTime: eventTime);
+              if (t != null) setState(() => eventTime = t);
+            },
+            icon: const Icon(Icons.access_time), label: Text('Time: ${eventTime.format(context)}')),
+          const SizedBox(height: 12),
+          TextFormField(controller: descriptionController, maxLines: 4,
+            decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder())),
+          const SizedBox(height: 12),
+          TextFormField(controller: socialController, keyboardType: TextInputType.url,
+            decoration: const InputDecoration(labelText: 'Social link (optional)', border: OutlineInputBorder())),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: saving ? null : saveChanges,
+            icon: saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.save),
+            label: Text(saving ? 'Saving...' : 'Save Changes'),
+            style: ElevatedButton.styleFrom(backgroundColor: purple, foregroundColor: Colors.white, padding: const EdgeInsets.all(14))),
+          const SizedBox(height: 10),
+          const Text('Edited event dobara admin approval ke liye pending ho jayega.',
+            textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 12)),
+        ]),
       ),
     );
   }

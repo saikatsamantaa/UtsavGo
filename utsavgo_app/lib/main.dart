@@ -1132,6 +1132,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final usernameController = TextEditingController();
   bool loading = true;
   bool saving = false;
+  bool uploadingPhoto = false;
   Map<String, dynamic> profile = {};
   int followers = 0;
   int following = 0;
@@ -1254,6 +1255,66 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Future<void> chooseProfilePhoto() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Wrap(children: [
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: const Text('Choose from gallery'),
+            onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+          ),
+          ListTile(
+            leading: const Icon(Icons.camera_alt_outlined),
+            title: const Text('Take a photo'),
+            onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+          ),
+        ]),
+      ),
+    );
+    if (source == null) return;
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: source, imageQuality: 85, maxWidth: 1200, maxHeight: 1200,
+      );
+      if (picked == null) return;
+      setState(() => uploadingPhoto = true);
+      final client = Supabase.instance.client;
+      final user = client.auth.currentUser!;
+      final extension = picked.name.contains('.') ? picked.name.split('.').last.toLowerCase() : 'jpg';
+      final safeExtension = ['jpg', 'jpeg', 'png', 'webp'].contains(extension) ? extension : 'jpg';
+      final path = '\${user.id}/profile_\${DateTime.now().millisecondsSinceEpoch}.\$safeExtension';
+      final contentType = safeExtension == 'png' ? 'image/png'
+          : safeExtension == 'webp' ? 'image/webp' : 'image/jpeg';
+      await client.storage.from('profile-photos').upload(
+        path, File(picked.path),
+        fileOptions: FileOptions(contentType: contentType, upsert: true),
+      );
+      final url = client.storage.from('profile-photos').getPublicUrl(path);
+      await client.from('profiles').update({
+        'avatar_url': url,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', user.id);
+      if (mounted) {
+        setState(() {
+          profile['avatar_url'] = url;
+          uploadingPhoto = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile photo update ho gayi!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => uploadingPhoto = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Photo upload nahi hui: \$e')),
+        );
+      }
+    }
+  }
+
   Future<void> copyProfileName() async {
     final username = usernameController.text.trim();
     await Clipboard.setData(ClipboardData(text: username.isEmpty ? nameController.text.trim() : '@$username'));
@@ -1294,8 +1355,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ]),
                 const SizedBox(height: 18),
                 Row(children: [
-                  const CircleAvatar(radius: 43, backgroundColor: Color(0xFFE9DDF8),
-                    child: Icon(Icons.person, size: 52, color: purple)),
+                  GestureDetector(
+                    onTap: uploadingPhoto ? null : chooseProfilePhoto,
+                    child: Stack(children: [
+                      CircleAvatar(
+                        radius: 43,
+                        backgroundColor: const Color(0xFFE9DDF8),
+                        backgroundImage: (profile['avatar_url']?.toString().isNotEmpty ?? false)
+                            ? NetworkImage(profile['avatar_url'].toString()) : null,
+                        child: (profile['avatar_url']?.toString().isNotEmpty ?? false)
+                            ? null : const Icon(Icons.person, size: 52, color: purple),
+                      ),
+                      Positioned(right: 0, bottom: 0, child: CircleAvatar(
+                        radius: 15, backgroundColor: purple,
+                        child: uploadingPhoto
+                            ? const SizedBox(width: 15, height: 15,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                      )),
+                    ]),
+                  ),
                   const SizedBox(width: 18),
                   Expanded(child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
                     _profileStat(postedEvents.length, 'Posts'),
@@ -1927,7 +2006,14 @@ class _PublicProfileContentState extends State<PublicProfileContent> {
         final events = List<Map<String, dynamic>>.from(data[2]);
         return ListView(padding: const EdgeInsets.all(18), children: [
           Row(children: [
-            const CircleAvatar(radius: 42, child: Icon(Icons.person, size: 48)),
+            CircleAvatar(
+              radius: 42,
+              backgroundColor: const Color(0xFFE9DDF8),
+              backgroundImage: (widget.profile['avatar_url']?.toString().isNotEmpty ?? false)
+                  ? NetworkImage(widget.profile['avatar_url'].toString()) : null,
+              child: (widget.profile['avatar_url']?.toString().isNotEmpty ?? false)
+                  ? null : const Icon(Icons.person, size: 48, color: purple),
+            ),
             const SizedBox(width: 22),
             Expanded(child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
               _profileStat(events.length, 'Events'),

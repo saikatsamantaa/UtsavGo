@@ -596,6 +596,14 @@ class _HomeContentState extends State<HomeContent> {
                                 ),
                                 const SizedBox(height: 5),
                                 Text(
+                                  'Posted by: ${event['profiles'] is Map ? (event['profiles']['display_name'] ?? 'UtsavGo User') : 'UtsavGo User'}',
+                                  style: const TextStyle(
+                                    color: purple,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                Text(
                                   'Location: ${event['location_text'] ?? ''}',
                                 ),
                                 const SizedBox(height: 5),

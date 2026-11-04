@@ -1167,7 +1167,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       postedEvents = List<Map<String, dynamic>>.from(rows);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Profile load nahi hua: \${e}')),
+        SnackBar(content: Text('Profile load nahi hua: ${e}')),
       );
     } finally {
       if (mounted) setState(() => loading = false);
@@ -1204,11 +1204,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted) {
         final duplicate = e.code == '23505' || e.message.toLowerCase().contains('duplicate');
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
-          duplicate ? 'Ye username pehle se kisi ne le rakha hai. Dusra username choose karo.' : 'Profile save nahi hua: \${e.message}',
+          duplicate ? 'Ye username pehle se kisi ne le rakha hai. Dusra username choose karo.' : 'Profile save nahi hua: ${e.message}',
         )));
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Profile save nahi hua: \${e}')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Profile save nahi hua: ${e}')));
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -1284,7 +1284,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final user = client.auth.currentUser!;
       final extension = picked.name.contains('.') ? picked.name.split('.').last.toLowerCase() : 'jpg';
       final safeExtension = ['jpg', 'jpeg', 'png', 'webp'].contains(extension) ? extension : 'jpg';
-      final path = '\${user.id}/profile_\${DateTime.now().millisecondsSinceEpoch}.\$safeExtension';
+      final path = '${user.id}/profile_${DateTime.now().millisecondsSinceEpoch}.$safeExtension';
       final contentType = safeExtension == 'png' ? 'image/png'
           : safeExtension == 'webp' ? 'image/webp' : 'image/jpeg';
       await client.storage.from('profile-photos').upload(
@@ -1309,7 +1309,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted) {
         setState(() => uploadingPhoto = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Photo upload nahi hui: \$e')),
+          SnackBar(content: Text('Photo upload nahi hui: $e')),
         );
       }
     }

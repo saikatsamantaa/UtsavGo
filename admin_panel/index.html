@@ -210,6 +210,7 @@ async function loadEvents(status) {
             <p><b>Description:</b> ${escapeHTML(event.description || "Not given")}</p>
             <p><b>Social Link:</b> ${event.social_link ? `<a href="${escapeHTML(event.social_link)}" target="_blank" rel="noopener">Open Link</a>` : "Not given"}</p>
             <p><b>Status:</b> ${escapeHTML(event.status)}</p>
+            ${event.rejection_reason ? `<p><b>Rejection reason:</b> ${escapeHTML(event.rejection_reason)}</p>` : ""}
             <p class="small">Submitted: ${escapeHTML(event.created_at)}</p>
             ${status === "pending" ? `
                 <button class="approve" data-action="approve">Approve</button>

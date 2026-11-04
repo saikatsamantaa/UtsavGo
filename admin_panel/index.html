@@ -238,12 +238,27 @@ function escapeHTML(value) {
 
 async function updateEvent(id, newStatus) {
     const action = newStatus === "approved" ? "Approve" : "Reject";
+    let rejectionReason = null;
 
-    if (!confirm(action + " this event?")) return;
+    if (newStatus === "rejected") {
+        rejectionReason = prompt("Reject karne ka reason likho (user ko dikhega):");
+        if (rejectionReason === null) return;
+        rejectionReason = rejectionReason.trim();
+        if (!rejectionReason) {
+            alert("Reject reason zaroor likho.");
+            return;
+        }
+    } else if (!confirm(action + " this event?")) {
+        return;
+    }
+
+    const updateData = newStatus === "rejected"
+        ? { status: newStatus, rejection_reason: rejectionReason }
+        : { status: newStatus, rejection_reason: null };
 
     const { error } = await db
         .from("events")
-        .update({ status: newStatus })
+        .update(updateData)
         .eq("id", id);
 
     if (error) {

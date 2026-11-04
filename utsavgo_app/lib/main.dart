@@ -1120,11 +1120,9 @@ class EventDetailsScreen extends StatelessWidget {
   }
 }
 
-// PROFILE AND EVENT HISTORY
-
+// INSTAGRAM-STYLE PROFILE AND EVENT GRID
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
-
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
@@ -1140,10 +1138,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<Map<String, dynamic>> postedEvents = [];
 
   @override
-  void initState() {
-    super.initState();
-    loadProfile();
-  }
+  void initState() { super.initState(); loadProfile(); }
 
   @override
   void dispose() {
@@ -1165,16 +1160,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final followingRows = await client.from('user_follows').select('following_id').eq('follower_id', user.id);
       followers = (followerRows as List).length;
       following = (followingRows as List).length;
-      final eventRows = await client.from('events').select('*')
+      final rows = await client.from('events').select('*')
           .eq('created_by', user.id).eq('status', 'approved')
           .order('created_at', ascending: false);
-      postedEvents = List<Map<String, dynamic>>.from(eventRows);
+      postedEvents = List<Map<String, dynamic>>.from(rows);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Profile load nahi hua: $e')),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Profile load nahi hua: \${e}')),
+      );
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -1202,107 +1195,201 @@ class _ProfileScreenState extends State<ProfileScreen> {
       });
       await Supabase.instance.client.auth.updateUser(UserAttributes(data: {'display_name': name}));
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile save ho gaya!')));
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile update ho gaya!')));
         await loadProfile();
       }
     } on PostgrestException catch (e) {
       if (mounted) {
         final duplicate = e.code == '23505' || e.message.toLowerCase().contains('duplicate');
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
-          duplicate ? 'Ye username pehle se kisi ne le rakha hai. Dusra username choose karo.' : 'Profile save nahi hua: ${e.message}',
+          duplicate ? 'Ye username pehle se kisi ne le rakha hai. Dusra username choose karo.' : 'Profile save nahi hua: \${e.message}',
         )));
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Profile save nahi hua: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Profile save nahi hua: \${e}')));
     } finally {
       if (mounted) setState(() => saving = false);
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (loading) return const Center(child: CircularProgressIndicator());
-    return RefreshIndicator(
-      onRefresh: loadProfile,
-      child: ListView(
-        padding: const EdgeInsets.all(18),
-        children: [
-          const SizedBox(height: 10),
-          Row(children: [
-            const CircleAvatar(radius: 42, backgroundColor: Color(0xFFE9DDF8),
-              child: Icon(Icons.person, size: 48, color: purple)),
-            const SizedBox(width: 24),
-            Expanded(child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-              _profileStat(postedEvents.length, 'Events'),
-              _profileStat(followers, 'Followers'),
-              _profileStat(following, 'Following'),
-            ])),
+  Future<void> openEditProfile() async {
+    nameController.text = profile['display_name']?.toString() ??
+        Supabase.instance.client.auth.currentUser?.userMetadata?['display_name']?.toString() ?? '';
+    usernameController.text = profile['username']?.toString() ?? '';
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Edit profile'),
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+              controller: nameController,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Name', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: usernameController,
+              autocorrect: false,
+              textCapitalization: TextCapitalization.none,
+              decoration: const InputDecoration(labelText: 'Username', prefixText: '@', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 8),
+            const Text('3-20 characters • lowercase letters, numbers and _ only',
+              style: TextStyle(fontSize: 11, color: Colors.grey)),
           ]),
-          const SizedBox(height: 14),
-          Text(nameController.text, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          Text('@${usernameController.text}', style: const TextStyle(color: Colors.grey)),
-          const SizedBox(height: 5),
-          Text(user?.email ?? '', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-          const SizedBox(height: 22),
-          TextField(controller: nameController, decoration: const InputDecoration(
-            labelText: 'Your Name', border: OutlineInputBorder(), prefixIcon: Icon(Icons.person))),
-          const SizedBox(height: 12),
-          TextField(controller: usernameController, autocorrect: false,
-            textCapitalization: TextCapitalization.none,
-            decoration: const InputDecoration(labelText: 'Unique Username (without @)',
-              prefixText: '@', border: OutlineInputBorder(), prefixIcon: Icon(Icons.alternate_email))),
-          const SizedBox(height: 10),
-          const Text('3-20 characters • lowercase letters, numbers and _ only',
-            style: TextStyle(color: Colors.grey, fontSize: 12)),
-          const SizedBox(height: 12),
-          ElevatedButton(onPressed: saving ? null : saveProfile,
+        ),
+        actions: [
+          TextButton(onPressed: saving ? null : () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: saving ? null : saveProfile,
             style: ElevatedButton.styleFrom(backgroundColor: purple, foregroundColor: Colors.white),
-            child: Text(saving ? 'Saving...' : 'Edit / Save Profile')),
-          const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MyEventsScreen())),
-            icon: const Icon(Icons.history), label: const Text('My Events / History')),
-          const SizedBox(height: 22),
-          const Text('My Events', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
-          if (postedEvents.isEmpty) const Text('Abhi koi approved event post nahi kiya.')
-          else GridView.builder(
-            shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-            itemCount: postedEvents.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 1),
-            itemBuilder: (context, index) {
-              final event = postedEvents[index];
-              final photo = event['photo_url']?.toString() ?? '';
-              return InkWell(
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => EventDetailsScreen(event: event))),
-                child: Stack(fit: StackFit.expand, children: [
-                  photo.isNotEmpty ? Image.network(photo, fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const ColoredBox(color: Color(0xFFE9DDF8), child: Icon(Icons.celebration)))
-                    : const ColoredBox(color: Color(0xFFE9DDF8), child: Icon(Icons.celebration)),
-                  Align(alignment: Alignment.bottomCenter, child: Container(
-                    color: Colors.black54, width: double.infinity, padding: const EdgeInsets.all(6),
-                    child: Text(event['title']?.toString() ?? 'Event',
-                      maxLines: 2, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)))),
-                ]),
-              );
-            },
+            child: saving
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Text('Save'),
           ),
-          const SizedBox(height: 20),
-          ElevatedButton.icon(
-            onPressed: () async { try { await Supabase.instance.client.auth.signOut(); } catch (_) {} },
-            icon: const Icon(Icons.logout), label: const Text('Logout'),
-            style: ElevatedButton.styleFrom(backgroundColor: purple, foregroundColor: Colors.white)),
         ],
       ),
     );
   }
 
-  Widget _profileStat(int count, String label) => Column(children: [
+  Future<void> copyProfileName() async {
+    final username = usernameController.text.trim();
+    await Clipboard.setData(ClipboardData(text: username.isEmpty ? nameController.text.trim() : '@$username'));
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Profile username copied!')),
+    );
+  }
+
+  void openFollowing() {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const FollowingScreen()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) return const Center(child: CircularProgressIndicator());
+    final displayName = nameController.text.trim().isEmpty ? 'UtsavGo User' : nameController.text.trim();
+    final username = usernameController.text.trim();
+
+    return RefreshIndicator(
+      onRefresh: loadProfile,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Expanded(child: Text(username.isEmpty ? 'your_profile' : username,
+                    style: const TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
+                    maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  IconButton(tooltip: 'My event history',
+                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MyEventsScreen())),
+                    icon: const Icon(Icons.menu)),
+                  IconButton(tooltip: 'Logout', onPressed: () async {
+                    try { await Supabase.instance.client.auth.signOut(); } catch (_) {}
+                  }, icon: const Icon(Icons.logout)),
+                ]),
+                const SizedBox(height: 18),
+                Row(children: [
+                  const CircleAvatar(radius: 43, backgroundColor: Color(0xFFE9DDF8),
+                    child: Icon(Icons.person, size: 52, color: purple)),
+                  const SizedBox(width: 18),
+                  Expanded(child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+                    _profileStat(postedEvents.length, 'Posts'),
+                    _profileStat(followers, 'Followers'),
+                    InkWell(onTap: openFollowing, child: _profileStat(following, 'Following')),
+                  ])),
+                ]),
+                const SizedBox(height: 14),
+                Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                if (username.isNotEmpty) Text('@$username', style: const TextStyle(color: Colors.grey)),
+                const SizedBox(height: 4),
+                const Text('Discover. Connect. Celebrate.', style: TextStyle(fontSize: 14)),
+                const SizedBox(height: 15),
+                Row(children: [
+                  Expanded(child: OutlinedButton(
+                    onPressed: openEditProfile,
+                    style: OutlinedButton.styleFrom(foregroundColor: darkPurple,
+                      side: BorderSide(color: Colors.grey.shade300), padding: const EdgeInsets.symmetric(vertical: 11)),
+                    child: const Text('Edit profile', style: TextStyle(fontWeight: FontWeight.bold)),
+                  )),
+                  const SizedBox(width: 8),
+                  Expanded(child: OutlinedButton(
+                    onPressed: copyProfileName,
+                    style: OutlinedButton.styleFrom(foregroundColor: darkPurple,
+                      side: BorderSide(color: Colors.grey.shade300), padding: const EdgeInsets.symmetric(vertical: 11)),
+                    child: const Text('Share profile', style: TextStyle(fontWeight: FontWeight.bold)),
+                  )),
+                ]),
+                const SizedBox(height: 16),
+                const Divider(height: 1),
+                const SizedBox(height: 10),
+                const Center(child: Icon(Icons.grid_on, color: purple, size: 25)),
+                const SizedBox(height: 8),
+              ]),
+            ),
+          ),
+          if (postedEvents.isEmpty)
+            const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(child: Padding(
+                padding: EdgeInsets.all(28),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.photo_library_outlined, size: 48, color: Colors.grey),
+                  SizedBox(height: 12),
+                  Text('No posts yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  SizedBox(height: 5),
+                  Text('Aapke approved events yahan dikhai denge.',
+                    textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+                ]),
+              )),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              sliver: SliverGrid(
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final event = postedEvents[index];
+                  final photo = event['photo_url']?.toString() ?? '';
+                  return InkWell(
+                    onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => EventDetailsScreen(event: event))),
+                    child: Stack(fit: StackFit.expand, children: [
+                      photo.isNotEmpty
+                        ? Image.network(photo, fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const ColoredBox(
+                              color: Color(0xFFE9DDF8), child: Icon(Icons.celebration, color: purple)))
+                        : const ColoredBox(color: Color(0xFFE9DDF8), child: Icon(Icons.celebration, color: purple)),
+                      Positioned(right: 6, bottom: 6, child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
+                        child: const Icon(Icons.event, color: Colors.white, size: 15),
+                      )),
+                    ]),
+                  );
+                }, childCount: postedEvents.length),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3, crossAxisSpacing: 2, mainAxisSpacing: 2, childAspectRatio: 0.92),
+              ),
+            ),
+          SliverToBoxAdapter(child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Center(child: TextButton.icon(
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MyEventsScreen())),
+              icon: const Icon(Icons.history), label: const Text('View all event history'),
+            )),
+          )),
+        ],
+      ),
+    );
+  }
+
+  Widget _profileStat(int count, String label) => Column(mainAxisSize: MainAxisSize.min, children: [
     Text('$count', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+    const SizedBox(height: 3),
     Text(label, style: const TextStyle(fontSize: 12)),
   ]);
 }

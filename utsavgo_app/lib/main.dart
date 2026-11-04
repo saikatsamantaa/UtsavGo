@@ -112,6 +112,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final formKey = GlobalKey<FormState>();
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
+  final displayNameController = TextEditingController();
 
   bool isLogin = true;
   bool loading = false;
@@ -121,6 +122,7 @@ class _AuthScreenState extends State<AuthScreen> {
   void dispose() {
     emailController.dispose();
     passwordController.dispose();
+    displayNameController.dispose();
     super.dispose();
   }
 
@@ -149,10 +151,16 @@ class _AuthScreenState extends State<AuthScreen> {
         );
         showMessage('Login successful!');
       } else {
+        final displayName = displayNameController.text.trim();
+        if (displayName.isEmpty) {
+          showMessage('Apna account name enter karo.');
+          return;
+        }
         final response = await client.auth.signUp(
           email: email,
           password: password,
           emailRedirectTo: 'utsavgo://login-callback',
+          data: {'display_name': displayName},
         );
 
         if (response.session == null) {
@@ -216,6 +224,24 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                   ),
                   const SizedBox(height: 25),
+                  if (!isLogin) ...[
+                    TextFormField(
+                      controller: displayNameController,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        labelText: 'Your Name / Nickname',
+                        prefixIcon: Icon(Icons.person_outline),
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (!isLogin && (value == null || value.trim().isEmpty)) {
+                          return 'Apna naam enter karo';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   TextFormField(
                     controller: emailController,
                     keyboardType: TextInputType.emailAddress,
@@ -327,7 +353,7 @@ class _HomeScreenState extends State<HomeScreen> {
       const HomeContent(),
       const Center(child: Text('Explore Events')),
       const CreateEventScreen(),
-      const Center(child: Text('Following')),
+      const FollowingScreen(),
       const ProfileScreen(),
     ];
 
@@ -405,7 +431,7 @@ class _HomeContentState extends State<HomeContent> {
   Future<List<Map<String, dynamic>>> fetchEvents() async {
     final response = await Supabase.instance.client
         .from('events')
-        .select()
+        .select('*, profiles!events_created_by_fkey(display_name)')
         .eq('status', 'approved')
         .order('event_date', ascending: true)
         .order('event_time', ascending: true);
@@ -671,6 +697,30 @@ class EventDetailsScreen extends StatelessWidget {
               color: darkPurple,
             ),
           ),
+          const SizedBox(height: 18),
+          Card(
+            child: ListTile(
+              leading: const CircleAvatar(child: Icon(Icons.person)),
+              title: Text((event['profiles'] is Map
+                  ? (event['profiles']['display_name'] ?? 'UtsavGo User').toString()
+                  : 'UtsavGo User')),
+              subtitle: const Text('Event Organizer'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                final creatorId = event['created_by']?.toString() ?? '';
+                if (creatorId.isNotEmpty) {
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => OrganizerProfileScreen(userId: creatorId),
+                  ));
+                }
+              },
+            ),
+          ),
+          if ((event['created_by']?.toString() ?? '').isNotEmpty)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FollowButton(userId: event['created_by'].toString()),
+            ),
           const SizedBox(height: 15),
           detailRow(Icons.category, 'Category', event['category']),
           detailRow(
@@ -808,48 +858,125 @@ class EventDetailsScreen extends StatelessWidget {
   }
 }
 
-// PROFILE AND LOGOUT
+// PROFILE AND EVENT HISTORY
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  final nameController = TextEditingController();
+  bool loading = true;
+  bool saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    loadProfile();
+  }
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> loadProfile() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser!;
+      final row = await Supabase.instance.client
+          .from('profiles').select('display_name').eq('id', user.id).maybeSingle();
+      nameController.text = row?['display_name']?.toString() ??
+          user.userMetadata?['display_name']?.toString() ?? '';
+    } catch (_) {
+      nameController.text = Supabase.instance.client.auth.currentUser?.email
+              ?.split('@').first ?? '';
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> saveName() async {
+    final name = nameController.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Naam khali nahi ho sakta.')),
+      );
+      return;
+    }
+    setState(() => saving = true);
+    try {
+      final user = Supabase.instance.client.auth.currentUser!;
+      await Supabase.instance.client.from('profiles').upsert({
+        'id': user.id,
+        'display_name': name,
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+      await Supabase.instance.client.auth.updateUser(
+        UserAttributes(data: {'display_name': name}),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Account name update ho gaya.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Name update nahi hua: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final user = Supabase.instance.client.auth.currentUser;
-
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        const Icon(
-          Icons.account_circle,
-          size: 90,
-          color: purple,
-        ),
-        const SizedBox(height: 15),
-        const Text(
-          'My Profile',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
+        const Icon(Icons.account_circle, size: 90, color: purple),
+        const SizedBox(height: 12),
+        const Text('My Profile', textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Text(user?.email ?? '', textAlign: TextAlign.center),
+        const SizedBox(height: 25),
+        TextField(
+          controller: nameController,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Account Name / Nickname',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.person),
           ),
         ),
-        const SizedBox(height: 10),
-        Text(
-          user?.email ?? 'User',
-          textAlign: TextAlign.center,
+        const SizedBox(height: 12),
+        ElevatedButton(
+          onPressed: loading || saving ? null : saveName,
+          child: Text(saving ? 'Saving...' : 'Save Name'),
         ),
-        const SizedBox(height: 30),
+        const SizedBox(height: 15),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const MyEventsScreen())),
+          icon: const Icon(Icons.history),
+          label: const Text('My Events / History'),
+        ),
+        const SizedBox(height: 15),
         ElevatedButton.icon(
           onPressed: () async {
             try {
               await Supabase.instance.client.auth.signOut();
-            } catch (e) {
+            } catch (_) {
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Logout nahi ho paya.'),
-                  ),
+                  const SnackBar(content: Text('Logout nahi ho paya.')),
                 );
               }
             }
@@ -857,12 +984,252 @@ class ProfileScreen extends StatelessWidget {
           icon: const Icon(Icons.logout),
           label: const Text('Logout'),
           style: ElevatedButton.styleFrom(
-            backgroundColor: purple,
-            foregroundColor: Colors.white,
+            backgroundColor: purple, foregroundColor: Colors.white,
             padding: const EdgeInsets.all(15),
           ),
         ),
       ],
+    );
+  }
+}
+
+class MyEventsScreen extends StatefulWidget {
+  const MyEventsScreen({super.key});
+
+  @override
+  State<MyEventsScreen> createState() => _MyEventsScreenState();
+}
+
+class _MyEventsScreenState extends State<MyEventsScreen> {
+  late Future<List<Map<String, dynamic>>> future;
+
+  @override
+  void initState() {
+    super.initState();
+    future = loadEvents();
+  }
+
+  Future<List<Map<String, dynamic>>> loadEvents() async {
+    final user = Supabase.instance.client.auth.currentUser!;
+    final rows = await Supabase.instance.client.from('events')
+        .select().eq('created_by', user.id).order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  Color statusColor(String status) {
+    if (status == 'approved') return Colors.green;
+    if (status == 'rejected') return Colors.red;
+    return Colors.orange;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('My Events / History')),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('History load nahi hui: ${snapshot.error}'));
+          }
+          final events = snapshot.data ?? [];
+          if (events.isEmpty) return const Center(child: Text('Abhi aapne koi event submit nahi kiya.'));
+          return RefreshIndicator(
+            onRefresh: () async => setState(() => future = loadEvents()),
+            child: ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(14),
+              itemCount: events.length,
+              itemBuilder: (context, index) {
+                final e = events[index];
+                final status = (e['status'] ?? 'pending').toString();
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(15),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(e['title']?.toString() ?? 'Event',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Text('Status: ${status.toUpperCase()}',
+                          style: TextStyle(color: statusColor(status), fontWeight: FontWeight.bold)),
+                      if (status == 'pending') const Text('Admin review ka wait ho raha hai.'),
+                      if (status == 'approved') const Text('Aapka event approve ho gaya hai.'),
+                      if (status == 'rejected') ...[
+                        const SizedBox(height: 6),
+                        Text('Reject reason: ${e['rejection_reason']?.toString().trim().isNotEmpty == true ? e['rejection_reason'] : 'Reason abhi available nahi hai.'}',
+                            style: const TextStyle(color: Colors.red)),
+                      ],
+                      const SizedBox(height: 5),
+                      Text('Submitted: ${e['created_at'] ?? ''}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                    ]),
+                  ),
+                );
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class FollowingScreen extends StatefulWidget {
+  const FollowingScreen({super.key});
+
+  @override
+  State<FollowingScreen> createState() => _FollowingScreenState();
+}
+
+class _FollowingScreenState extends State<FollowingScreen> {
+  late Future<List<Map<String, dynamic>>> future;
+
+  @override
+  void initState() {
+    super.initState();
+    future = loadFollowing();
+  }
+
+  Future<List<Map<String, dynamic>>> loadFollowing() async {
+    final uid = Supabase.instance.client.auth.currentUser!.id;
+    final rows = await Supabase.instance.client.from('user_follows')
+        .select('following_id, profiles!user_follows_following_id_fkey(id, display_name)')
+        .eq('follower_id', uid).order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+        if (snapshot.hasError) return Center(child: Text('Following load nahi hui: ${snapshot.error}'));
+        final rows = snapshot.data ?? [];
+        if (rows.isEmpty) return const Center(child: Text('Aap abhi kisi ko follow nahi kar rahe.'));
+        return ListView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: rows.length,
+          itemBuilder: (context, index) {
+            final profile = Map<String, dynamic>.from(rows[index]['profiles'] ?? {});
+            return ListTile(
+              leading: const CircleAvatar(child: Icon(Icons.person)),
+              title: Text(profile['display_name']?.toString() ?? 'UtsavGo User'),
+              subtitle: const Text('Following'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => OrganizerProfileScreen(userId: profile['id'].toString()),
+              )),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class FollowButton extends StatefulWidget {
+  final String userId;
+  const FollowButton({super.key, required this.userId});
+
+  @override
+  State<FollowButton> createState() => _FollowButtonState();
+}
+
+class _FollowButtonState extends State<FollowButton> {
+  bool following = false;
+  bool loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    checkFollow();
+  }
+
+  Future<void> checkFollow() async {
+    final me = Supabase.instance.client.auth.currentUser?.id;
+    if (me == null || me == widget.userId) {
+      if (mounted) setState(() => loading = false);
+      return;
+    }
+    try {
+      final row = await Supabase.instance.client.from('user_follows')
+          .select('follower_id').eq('follower_id', me)
+          .eq('following_id', widget.userId).maybeSingle();
+      if (mounted) setState(() { following = row != null; loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> toggle() async {
+    final me = Supabase.instance.client.auth.currentUser?.id;
+    if (me == null) return;
+    setState(() => loading = true);
+    try {
+      if (following) {
+        await Supabase.instance.client.from('user_follows')
+            .delete().eq('follower_id', me).eq('following_id', widget.userId);
+      } else {
+        await Supabase.instance.client.from('user_follows').insert({
+          'follower_id': me, 'following_id': widget.userId,
+        });
+      }
+      if (mounted) setState(() { following = !following; loading = false; });
+    } catch (e) {
+      if (mounted) {
+        setState(() => loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Follow update nahi hua: $e')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final me = Supabase.instance.client.auth.currentUser?.id;
+    if (me == widget.userId) return const SizedBox.shrink();
+    return OutlinedButton(
+      onPressed: loading ? null : toggle,
+      child: Text(loading ? 'Please wait...' : following ? 'Following' : 'Follow'),
+    );
+  }
+}
+
+class OrganizerProfileScreen extends StatelessWidget {
+  final String userId;
+  const OrganizerProfileScreen({super.key, required this.userId});
+
+  Future<Map<String, dynamic>?> loadProfile() async {
+    return await Supabase.instance.client.from('profiles')
+        .select('id, display_name').eq('id', userId).maybeSingle();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Organizer Profile')),
+      body: FutureBuilder<Map<String, dynamic>?>(
+        future: loadProfile(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+          final profile = snapshot.data;
+          if (profile == null) return const Center(child: Text('Profile nahi mila.'));
+          return Center(child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const CircleAvatar(radius: 42, child: Icon(Icons.person, size: 48)),
+              const SizedBox(height: 14),
+              Text(profile['display_name']?.toString() ?? 'UtsavGo User',
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              FollowButton(userId: userId),
+            ]),
+          ));
+        },
+      ),
     );
   }
 }

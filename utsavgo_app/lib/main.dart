@@ -353,7 +353,7 @@ class _HomeScreenState extends State<HomeScreen> {
       const HomeContent(),
       const Center(child: Text('Explore Events')),
       const CreateEventScreen(),
-      const FollowingScreen(),
+      const EventsMapScreen(),
       const ProfileScreen(),
     ];
 
@@ -397,8 +397,8 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Create',
           ),
           NavigationDestination(
-            icon: Icon(Icons.people_outline),
-            label: 'Following',
+            icon: Icon(Icons.map_outlined),
+            label: 'Map',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),
@@ -407,6 +407,87 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
+  }
+}
+
+// IN-APP MAP WITH APPROVED EVENTS
+class EventsMapScreen extends StatefulWidget {
+  const EventsMapScreen({super.key});
+  @override
+  State<EventsMapScreen> createState() => _EventsMapScreenState();
+}
+class _EventsMapScreenState extends State<EventsMapScreen> {
+  final MapController mapController = MapController();
+  LatLng? myLocation;
+  List<Map<String, dynamic>> events = [];
+  bool loading = true;
+  String? error;
+  @override
+  void initState() { super.initState(); loadMap(); }
+  Future<void> loadMap() async {
+    try {
+      final enabled = await Geolocator.isLocationServiceEnabled();
+      if (!enabled) throw Exception('Phone ka GPS ON karo.');
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        throw Exception('Location permission allow karo.');
+      }
+      final pos = await Geolocator.getCurrentPosition();
+      final rows = await Supabase.instance.client.from('events').select('*')
+        .eq('status', 'approved').not('latitude', 'is', null).not('longitude', 'is', null);
+      if (!mounted) return;
+      setState(() {
+        myLocation = LatLng(pos.latitude, pos.longitude);
+        events = List<Map<String, dynamic>>.from(rows);
+        loading = false; error = null;
+      });
+      mapController.move(myLocation!, 12);
+    } catch (e) {
+      if (mounted) setState(() { loading = false; error = e.toString(); });
+    }
+  }
+  @override
+  Widget build(BuildContext context) {
+    final center = myLocation ?? const LatLng(22.5726, 88.3639);
+    final markers = <Marker>[
+      if (myLocation != null) Marker(point: myLocation!, width: 48, height: 48,
+        child: const Icon(Icons.my_location, color: Colors.blue, size: 34)),
+      ...events.where((e) => e['latitude'] != null && e['longitude'] != null).map((e) {
+        final point = LatLng((e['latitude'] as num).toDouble(), (e['longitude'] as num).toDouble());
+        return Marker(point: point, width: 46, height: 46, child: GestureDetector(
+          onTap: () => showModalBottomSheet(context: context, isScrollControlled: true,
+            builder: (_) => SafeArea(child: ListTile(
+              leading: const Icon(Icons.celebration, color: purple),
+              title: Text(e['title']?.toString() ?? 'Event'),
+              subtitle: Text(e['location_text']?.toString() ?? ''),
+              trailing: const Icon(Icons.open_in_new),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => EventDetailsScreen(event: e)));
+              },
+            ))),
+          child: const Icon(Icons.location_on, color: Colors.red, size: 42),
+        ));
+      }),
+    ];
+    return Stack(children: [
+      FlutterMap(mapController: mapController, options: MapOptions(initialCenter: center, initialZoom: 5),
+        children: [
+          TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: 'com.example.utsavgo'),
+          MarkerLayer(markers: markers),
+        ]),
+      if (loading) const Center(child: Card(child: Padding(padding: EdgeInsets.all(14), child: CircularProgressIndicator()))),
+      if (error != null) Positioned(top: 12, left: 12, right: 12, child: Card(
+        child: Padding(padding: const EdgeInsets.all(12), child: Column(children: [
+          Text(error!, textAlign: TextAlign.center),
+          TextButton(onPressed: () { setState(() { loading = true; }); loadMap(); }, child: const Text('Try Again')),
+        ])))),
+      Positioned(right: 14, bottom: 18, child: FloatingActionButton(
+        heroTag: 'map_refresh', onPressed: () { setState(() { loading = true; }); loadMap(); },
+        child: const Icon(Icons.my_location))),
+    ]);
   }
 }
 
@@ -929,8 +1010,13 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final nameController = TextEditingController();
+  final usernameController = TextEditingController();
   bool loading = true;
   bool saving = false;
+  Map<String, dynamic> profile = {};
+  int followers = 0;
+  int following = 0;
+  List<Map<String, dynamic>> postedEvents = [];
 
   @override
   void initState() {
@@ -941,30 +1027,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void dispose() {
     nameController.dispose();
+    usernameController.dispose();
     super.dispose();
   }
 
   Future<void> loadProfile() async {
     try {
-      final user = Supabase.instance.client.auth.currentUser!;
-      final row = await Supabase.instance.client
-          .from('profiles').select('display_name').eq('id', user.id).maybeSingle();
-      nameController.text = row?['display_name']?.toString() ??
+      final client = Supabase.instance.client;
+      final user = client.auth.currentUser!;
+      final row = await client.from('profiles').select('*').eq('id', user.id).maybeSingle();
+      profile = row ?? {};
+      nameController.text = profile['display_name']?.toString() ??
           user.userMetadata?['display_name']?.toString() ?? '';
-    } catch (_) {
-      nameController.text = Supabase.instance.client.auth.currentUser?.email
-              ?.split('@').first ?? '';
+      usernameController.text = profile['username']?.toString() ?? '';
+      final followerRows = await client.from('user_follows').select('follower_id').eq('following_id', user.id);
+      final followingRows = await client.from('user_follows').select('following_id').eq('follower_id', user.id);
+      followers = (followerRows as List).length;
+      following = (followingRows as List).length;
+      final eventRows = await client.from('events').select('*')
+          .eq('created_by', user.id).eq('status', 'approved')
+          .order('created_at', ascending: false);
+      postedEvents = List<Map<String, dynamic>>.from(eventRows);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Profile load nahi hua: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => loading = false);
     }
   }
 
-  Future<void> saveName() async {
+  Future<void> saveProfile() async {
     final name = nameController.text.trim();
-    if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Naam khali nahi ho sakta.')),
-      );
+    final username = usernameController.text.trim().replaceFirst(RegExp(r'^@'), '').toLowerCase();
+    if (name.isEmpty || username.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name aur username dono bharo.')));
+      return;
+    }
+    if (!RegExp(r'^[a-z0-9_]{3,20}$').hasMatch(username)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Username 3-20 characters ka ho: a-z, 0-9 ya underscore.')));
       return;
     }
     setState(() => saving = true);
@@ -973,22 +1076,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await Supabase.instance.client.from('profiles').upsert({
         'id': user.id,
         'display_name': name,
+        'username': username,
         'updated_at': DateTime.now().toIso8601String(),
       });
-      await Supabase.instance.client.auth.updateUser(
-        UserAttributes(data: {'display_name': name}),
-      );
+      await Supabase.instance.client.auth.updateUser(UserAttributes(data: {'display_name': name}));
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Account name update ho gaya.')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile save ho gaya!')));
+        await loadProfile();
+      }
+    } on PostgrestException catch (e) {
+      if (mounted) {
+        final duplicate = e.code == '23505' || e.message.toLowerCase().contains('duplicate');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+          duplicate ? 'Ye username pehle se kisi ne le rakha hai. Dusra username choose karo.' : 'Profile save nahi hua: ${e.message}',
+        )));
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Name update nahi hua: $e')),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Profile save nahi hua: $e')));
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -997,60 +1101,89 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final user = Supabase.instance.client.auth.currentUser;
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        const Icon(Icons.account_circle, size: 90, color: purple),
-        const SizedBox(height: 12),
-        const Text('My Profile', textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Text(user?.email ?? '', textAlign: TextAlign.center),
-        const SizedBox(height: 25),
-        TextField(
-          controller: nameController,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            labelText: 'Account Name / Nickname',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.person),
+    if (loading) return const Center(child: CircularProgressIndicator());
+    return RefreshIndicator(
+      onRefresh: loadProfile,
+      child: ListView(
+        padding: const EdgeInsets.all(18),
+        children: [
+          const SizedBox(height: 10),
+          Row(children: [
+            const CircleAvatar(radius: 42, backgroundColor: Color(0xFFE9DDF8),
+              child: Icon(Icons.person, size: 48, color: purple)),
+            const SizedBox(width: 24),
+            Expanded(child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+              _profileStat(postedEvents.length, 'Events'),
+              _profileStat(followers, 'Followers'),
+              _profileStat(following, 'Following'),
+            ])),
+          ]),
+          const SizedBox(height: 14),
+          Text(nameController.text, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          Text('@${usernameController.text}', style: const TextStyle(color: Colors.grey)),
+          const SizedBox(height: 5),
+          Text(user?.email ?? '', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+          const SizedBox(height: 22),
+          TextField(controller: nameController, decoration: const InputDecoration(
+            labelText: 'Your Name', border: OutlineInputBorder(), prefixIcon: Icon(Icons.person))),
+          const SizedBox(height: 12),
+          TextField(controller: usernameController, autocorrect: false,
+            textCapitalization: TextCapitalization.none,
+            decoration: const InputDecoration(labelText: 'Unique Username (without @)',
+              prefixText: '@', border: OutlineInputBorder(), prefixIcon: Icon(Icons.alternate_email))),
+          const SizedBox(height: 10),
+          const Text('3-20 characters • lowercase letters, numbers and _ only',
+            style: TextStyle(color: Colors.grey, fontSize: 12)),
+          const SizedBox(height: 12),
+          ElevatedButton(onPressed: saving ? null : saveProfile,
+            style: ElevatedButton.styleFrom(backgroundColor: purple, foregroundColor: Colors.white),
+            child: Text(saving ? 'Saving...' : 'Edit / Save Profile')),
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MyEventsScreen())),
+            icon: const Icon(Icons.history), label: const Text('My Events / History')),
+          const SizedBox(height: 22),
+          const Text('My Events', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          if (postedEvents.isEmpty) const Text('Abhi koi approved event post nahi kiya.')
+          else GridView.builder(
+            shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+            itemCount: postedEvents.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 1),
+            itemBuilder: (context, index) {
+              final event = postedEvents[index];
+              final photo = event['photo_url']?.toString() ?? '';
+              return InkWell(
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => EventDetailsScreen(event: event))),
+                child: Stack(fit: StackFit.expand, children: [
+                  photo.isNotEmpty ? Image.network(photo, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const ColoredBox(color: Color(0xFFE9DDF8), child: Icon(Icons.celebration)))
+                    : const ColoredBox(color: Color(0xFFE9DDF8), child: Icon(Icons.celebration)),
+                  Align(alignment: Alignment.bottomCenter, child: Container(
+                    color: Colors.black54, width: double.infinity, padding: const EdgeInsets.all(6),
+                    child: Text(event['title']?.toString() ?? 'Event',
+                      maxLines: 2, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)))),
+                ]),
+              );
+            },
           ),
-        ),
-        const SizedBox(height: 12),
-        ElevatedButton(
-          onPressed: loading || saving ? null : saveName,
-          child: Text(saving ? 'Saving...' : 'Save Name'),
-        ),
-        const SizedBox(height: 15),
-        OutlinedButton.icon(
-          onPressed: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const MyEventsScreen())),
-          icon: const Icon(Icons.history),
-          label: const Text('My Events / History'),
-        ),
-        const SizedBox(height: 15),
-        ElevatedButton.icon(
-          onPressed: () async {
-            try {
-              await Supabase.instance.client.auth.signOut();
-            } catch (_) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Logout nahi ho paya.')),
-                );
-              }
-            }
-          },
-          icon: const Icon(Icons.logout),
-          label: const Text('Logout'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: purple, foregroundColor: Colors.white,
-            padding: const EdgeInsets.all(15),
-          ),
-        ),
-      ],
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: () async { try { await Supabase.instance.client.auth.signOut(); } catch (_) {} },
+            icon: const Icon(Icons.logout), label: const Text('Logout'),
+            style: ElevatedButton.styleFrom(backgroundColor: purple, foregroundColor: Colors.white)),
+        ],
+      ),
     );
   }
+
+  Widget _profileStat(int count, String label) => Column(children: [
+    Text('$count', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+    Text(label, style: const TextStyle(fontSize: 12)),
+  ]);
 }
 
 class MyEventsScreen extends StatefulWidget {
@@ -1282,41 +1415,108 @@ class _FollowButtonState extends State<FollowButton> {
   }
 }
 
-class OrganizerProfileScreen extends StatelessWidget {
+class OrganizerProfileScreen extends StatefulWidget {
   final String userId;
   const OrganizerProfileScreen({super.key, required this.userId});
+  @override
+  State<OrganizerProfileScreen> createState() => _OrganizerProfileScreenState();
+}
 
+class _OrganizerProfileScreenState extends State<OrganizerProfileScreen> {
+  late Future<Map<String, dynamic>?> profileFuture;
+  @override
+  void initState() { super.initState(); profileFuture = loadProfile(); }
   Future<Map<String, dynamic>?> loadProfile() async {
     return await Supabase.instance.client.from('profiles')
-        .select('id, display_name').eq('id', userId).maybeSingle();
+      .select('*').eq('id', widget.userId).maybeSingle();
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Organizer Profile')),
+      appBar: AppBar(title: const Text('Profile')),
       body: FutureBuilder<Map<String, dynamic>?>(
-        future: loadProfile(),
+        future: profileFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+          if (snapshot.hasError) return Center(child: Text('Profile load nahi hua: ${snapshot.error}'));
           final profile = snapshot.data;
           if (profile == null) return const Center(child: Text('Profile nahi mila.'));
-          return Center(child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const CircleAvatar(radius: 42, child: Icon(Icons.person, size: 48)),
-              const SizedBox(height: 14),
-              Text(profile['display_name']?.toString() ?? 'UtsavGo User',
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              FollowButton(userId: userId),
-            ]),
-          ));
+          return PublicProfileContent(userId: widget.userId, profile: profile);
         },
       ),
     );
   }
 }
+
+class PublicProfileContent extends StatefulWidget {
+  final String userId;
+  final Map<String, dynamic> profile;
+  const PublicProfileContent({super.key, required this.userId, required this.profile});
+  @override
+  State<PublicProfileContent> createState() => _PublicProfileContentState();
+}
+
+class _PublicProfileContentState extends State<PublicProfileContent> {
+  late Future<List<dynamic>> dataFuture;
+  @override
+  void initState() { super.initState(); dataFuture = loadData(); }
+  Future<List<dynamic>> loadData() async {
+    final client = Supabase.instance.client;
+    final followers = await client.from('user_follows').select('follower_id').eq('following_id', widget.userId);
+    final following = await client.from('user_follows').select('following_id').eq('follower_id', widget.userId);
+    final events = await client.from('events').select('*').eq('created_by', widget.userId)
+      .eq('status', 'approved').order('created_at', ascending: false);
+    return [followers, following, events];
+  }
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<dynamic>>(
+      future: dataFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+        if (snapshot.hasError) return Center(child: Text('Profile details load nahi hue: ${snapshot.error}'));
+        final data = snapshot.data!;
+        final events = List<Map<String, dynamic>>.from(data[2]);
+        return ListView(padding: const EdgeInsets.all(18), children: [
+          Row(children: [
+            const CircleAvatar(radius: 42, child: Icon(Icons.person, size: 48)),
+            const SizedBox(width: 22),
+            Expanded(child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+              _profileStat(events.length, 'Events'),
+              _profileStat((data[0] as List).length, 'Followers'),
+              _profileStat((data[1] as List).length, 'Following'),
+            ])),
+          ]),
+          const SizedBox(height: 14),
+          Text(widget.profile['display_name']?.toString() ?? 'UtsavGo User',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+          Text('@${widget.profile['username'] ?? 'username'}', style: const TextStyle(color: Colors.grey)),
+          const SizedBox(height: 14),
+          FollowButton(userId: widget.userId),
+          const SizedBox(height: 20),
+          const Text('Events', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          if (events.isEmpty) const Text('Is user ne abhi koi approved event post nahi kiya.')
+          else GridView.builder(
+            shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+            itemCount: events.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 8, mainAxisSpacing: 8),
+            itemBuilder: (context, i) => InkWell(
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => EventDetailsScreen(event: events[i]))),
+              child: Image.network(events[i]['photo_url']?.toString() ?? '', fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const ColoredBox(color: Color(0xFFE9DDF8), child: Icon(Icons.celebration))),
+            ),
+          ),
+        ]);
+      },
+    );
+  }
+}
+
+Widget _profileStat(int count, String label) => Column(children: [
+  Text('$count', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+  Text(label, style: const TextStyle(fontSize: 12)),
+]);
 
 // CREATE EVENT SCREEN
 

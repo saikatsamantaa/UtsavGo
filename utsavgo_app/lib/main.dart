@@ -679,6 +679,60 @@ class EventDetailsScreen extends StatelessWidget {
             event['location_text'],
           ),
           detailRow(Icons.place, 'Landmark', event['landmark']),
+          if ((event['landmark']?.toString().trim() ?? '').isNotEmpty) ...[
+            const SizedBox(height: 4),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final landmark = event['landmark'].toString().trim();
+                await Clipboard.setData(ClipboardData(text: landmark));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Landmark copied!')),
+                  );
+                }
+              },
+              icon: const Icon(Icons.copy),
+              label: const Text('Copy Landmark'),
+            ),
+          ],
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final latitude = event['latitude'];
+              final longitude = event['longitude'];
+              final location = event['location_text']?.toString() ?? '';
+              final landmark = event['landmark']?.toString() ?? '';
+
+              final String query;
+              if (latitude != null && longitude != null) {
+                query = '$latitude,$longitude';
+              } else {
+                query = Uri.encodeComponent('$location $landmark'.trim());
+              }
+
+              if (query.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Event location is not available.')),
+                );
+                return;
+              }
+
+              final uri = Uri.parse(
+                'https://www.google.com/maps/search/?api=1&query=$query',
+              );
+              final opened = await launchUrl(
+                uri,
+                mode: LaunchMode.externalApplication,
+              );
+              if (!opened && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Google Maps open nahi ho paya.')),
+                );
+              }
+            },
+            icon: const Icon(Icons.map),
+            label: const Text('Open in Google Maps'),
+          ),
           detailRow(
             Icons.calendar_month,
             'Date',
@@ -1343,26 +1397,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => copyText(locationController.text),
-                icon: const Icon(Icons.copy),
-                label: const Text('Copy Location'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => copyText(landmarkController.text),
-                icon: const Icon(Icons.copy),
-                label: const Text('Copy Landmark'),
-              ),
-              OutlinedButton.icon(
-                onPressed: openMaps,
-                icon: const Icon(Icons.map),
-                label: const Text('Open Maps'),
-              ),
-            ],
-          ),
           const SizedBox(height: 22),
           const Text(
             'Event Date & Time',

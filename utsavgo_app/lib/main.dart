@@ -386,48 +386,243 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// HOME CONTENT
+// HOME CONTENT - SHOW APPROVED EVENTS
 
-class HomeContent extends StatelessWidget {
+class HomeContent extends StatefulWidget {
   const HomeContent({super.key});
 
   @override
+  State<HomeContent> createState() => _HomeContentState();
+}
+
+class _HomeContentState extends State<HomeContent> {
+  late Future<List<Map<String, dynamic>>> eventsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    eventsFuture = fetchEvents();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchEvents() async {
+    final response = await Supabase.instance.client
+        .from('events')
+        .select()
+        .eq('status', 'approved')
+        .order('event_date', ascending: true)
+        .order('event_time', ascending: true);
+
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  Future<void> refreshEvents() async {
+    setState(() {
+      eventsFuture = fetchEvents();
+    });
+
+    await eventsFuture;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(18),
-      children: const [
-        Text(
-          'Discover Events',
-          style: TextStyle(
-            fontSize: 27,
-            fontWeight: FontWeight.bold,
-            color: darkPurple,
+    return RefreshIndicator(
+      onRefresh: refreshEvents,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(18),
+        children: [
+          const Text(
+            'Discover Events',
+            style: TextStyle(
+              fontSize: 27,
+              fontWeight: FontWeight.bold,
+              color: darkPurple,
+            ),
           ),
-        ),
-        SizedBox(height: 5),
-        Text('Discover. Connect. Celebrate.'),
-        SizedBox(height: 22),
-        Text(
-          'Find Something Amazing!',
-          style: TextStyle(
-            color: purple,
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
+          const SizedBox(height: 5),
+          const Text('Discover. Connect. Celebrate.'),
+          const SizedBox(height: 22),
+          const Text(
+            'Find Something Amazing!',
+            style: TextStyle(
+              color: purple,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-        ),
-        SizedBox(height: 10),
-        Text('Explore what is happening around you.'),
-        SizedBox(height: 25),
-        Text(
-          'Nearby Events',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
+          const SizedBox(height: 10),
+          const Text('Explore what is happening around you.'),
+          const SizedBox(height: 25),
+          const Text(
+            'Nearby Events',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-        ),
-        SizedBox(height: 12),
-        Text('Your nearby events will appear here.'),
-      ],
+          const SizedBox(height: 12),
+
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: eventsFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState ==
+                  ConnectionState.waiting) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(30),
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              }
+
+              if (snapshot.hasError) {
+                return Column(
+                  children: [
+                    const Text(
+                      'Events load nahi ho paye.',
+                      textAlign: TextAlign.center,
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          eventsFuture = fetchEvents();
+                        });
+                      },
+                      child: const Text('Try Again'),
+                    ),
+                  ],
+                );
+              }
+
+              final events = snapshot.data ?? [];
+
+              if (events.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Center(
+                    child: Text(
+                      'Abhi koi approved event available nahi hai.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                );
+              }
+
+              return Column(
+                children: events.map((event) {
+                  final photoUrl =
+                      event['photo_url']?.toString() ?? '';
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 18),
+                    clipBehavior: Clip.antiAlias,
+                    elevation: 3,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Column(
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start,
+                      children: [
+                        if (photoUrl.isNotEmpty)
+                          Image.network(
+                            photoUrl,
+                            width: double.infinity,
+                            height: 190,
+                            fit: BoxFit.cover,
+                            errorBuilder:
+                                (context, error, stackTrace) {
+                              return const SizedBox(
+                                height: 120,
+                                child: Center(
+                                  child: Icon(
+                                    Icons.broken_image,
+                                    size: 45,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        Padding(
+                          padding: const EdgeInsets.all(15),
+                          child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                event['title']?.toString() ??
+                                    'Untitled Event',
+                                style: const TextStyle(
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.bold,
+                                  color: darkPurple,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Category: ${event['category'] ?? ''}',
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                'Location: ${event['location_text'] ?? ''}',
+                              ),
+                              const SizedBox(height: 5),
+                              if ((event['landmark'] ?? '')
+                                  .toString()
+                                  .isNotEmpty)
+                                Text(
+                                  'Landmark: ${event['landmark']}',
+                                ),
+                              const SizedBox(height: 5),
+                              Text(
+                                'Date: ${event['event_date'] ?? ''}',
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                'Time: ${event['event_time'] ?? ''}',
+                              ),
+                              if ((event['description'] ?? '')
+                                  .toString()
+                                  .isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  event['description'].toString(),
+                                ),
+                              ],
+                              if ((event['social_link'] ?? '')
+                                  .toString()
+                                  .isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                TextButton.icon(
+                                  onPressed: () async {
+                                    final link = event['social_link']
+                                        .toString();
+                                    final uri = Uri.tryParse(link);
+
+                                    if (uri != null) {
+                                      await launchUrl(
+                                        uri,
+                                        mode: LaunchMode
+                                            .externalApplication,
+                                      );
+                                    }
+                                  },
+                                  icon: const Icon(Icons.link),
+                                  label: const Text('More Details'),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 }

@@ -57,7 +57,6 @@ Future<void> main() async {
   runApp(const UtsavGoApp());
 }
 
-
 class UtsavGoApp extends StatelessWidget {
   const UtsavGoApp({super.key});
 
@@ -153,10 +152,9 @@ class _AuthScreenState extends State<AuthScreen> {
         showMessage('Login successful!');
       } else {
         final response = await client.auth.signUp(
-  email: email,
-  password: password,
-  emailRedirectTo: 'utsavgo://login-callback',
-
+          email: email,
+          password: password,
+          emailRedirectTo: 'utsavgo://login-callback',
         );
 
         if (response.session == null) {
@@ -530,6 +528,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   TimeOfDay? eventTime;
   LatLng? selectedLocation;
   bool gettingLocation = false;
+  bool submitting = false;
 
   @override
   void dispose() {
@@ -748,7 +747,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     );
   }
 
-  void submitEvent() {
+  // SUBMIT EVENT TO SUPABASE
+
+  Future<void> submitEvent() async {
+    if (submitting) return;
+
     if (!formKey.currentState!.validate()) return;
 
     if (eventPhoto == null) {
@@ -766,9 +769,104 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       return;
     }
 
-    showMessage(
-      'Login successful! Online event submission next step mein connect hoga.',
-    );
+    final client = Supabase.instance.client;
+    final user = client.auth.currentUser;
+
+    if (user == null) {
+      showMessage('Pehle login karo.');
+      return;
+    }
+
+    setState(() => submitting = true);
+
+    try {
+      showMessage('Event upload ho raha hai. Please wait...');
+
+      final extension =
+          eventPhoto!.name.split('.').last.toLowerCase();
+
+      final storagePath =
+          '${user.id}/${DateTime.now().millisecondsSinceEpoch}.$extension';
+
+      final contentType = extension == 'png'
+          ? 'image/png'
+          : extension == 'webp'
+              ? 'image/webp'
+              : 'image/jpeg';
+
+      await client.storage
+          .from('event-photos')
+          .uploadBinary(
+            storagePath,
+            await eventPhoto!.readAsBytes(),
+            fileOptions: FileOptions(
+              contentType: contentType,
+            ),
+          );
+
+      final photoUrl = client.storage
+          .from('event-photos')
+          .getPublicUrl(storagePath);
+
+      final date =
+          '${eventDate!.year.toString().padLeft(4, '0')}-'
+          '${eventDate!.month.toString().padLeft(2, '0')}-'
+          '${eventDate!.day.toString().padLeft(2, '0')}';
+
+      final time =
+          '${eventTime!.hour.toString().padLeft(2, '0')}:'
+          '${eventTime!.minute.toString().padLeft(2, '0')}:00';
+
+      await client.from('events').insert({
+        'title': nameController.text.trim(),
+        'category': category,
+        'location_text': locationController.text.trim(),
+        'landmark': landmarkController.text.trim().isEmpty
+            ? null
+            : landmarkController.text.trim(),
+        'event_date': date,
+        'event_time': time,
+        'description': descriptionController.text.trim(),
+        'social_link': socialController.text.trim().isEmpty
+            ? null
+            : socialController.text.trim(),
+        'latitude': selectedLocation?.latitude,
+        'longitude': selectedLocation?.longitude,
+        'photo_url': photoUrl,
+        'status': 'pending',
+        'created_by': user.id,
+      });
+
+      if (!mounted) return;
+
+      showMessage(
+        'Event successfully submit ho gaya! Admin approval ka wait karo.',
+      );
+
+      nameController.clear();
+      locationController.clear();
+      landmarkController.clear();
+      descriptionController.clear();
+      socialController.clear();
+
+      setState(() {
+        eventPhoto = null;
+        eventDate = null;
+        eventTime = null;
+        selectedLocation = null;
+        category = 'Puja';
+      });
+    } on StorageException catch (e) {
+      showMessage('Photo upload error: ${e.message}');
+    } on PostgrestException catch (e) {
+      showMessage('Database error: ${e.message}');
+    } catch (e) {
+      showMessage('Event submit nahi hua. Dobara try karo.');
+    } finally {
+      if (mounted) {
+        setState(() => submitting = false);
+      }
+    }
   }
 
   @override
@@ -990,11 +1088,20 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           SizedBox(
             height: 52,
             child: ElevatedButton.icon(
-              onPressed: submitEvent,
-              icon: const Icon(Icons.send),
-              label: const Text(
-                'Submit Event',
-                style: TextStyle(fontSize: 16),
+              onPressed: submitting ? null : submitEvent,
+              icon: submitting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.send),
+              label: Text(
+                submitting ? 'Submitting...' : 'Submit Event',
+                style: const TextStyle(fontSize: 16),
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: purple,

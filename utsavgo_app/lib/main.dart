@@ -502,6 +502,18 @@ class HomeContent extends StatefulWidget {
 
 class _HomeContentState extends State<HomeContent> {
   late Future<List<Map<String, dynamic>>> eventsFuture;
+  final TextEditingController searchController = TextEditingController();
+  String selectedCategory = 'All';
+
+  final List<String> homeCategories = [
+    'All', 'Puja', 'Concert', 'Sports', 'Fair', 'Expo', 'Dance Academy',
+  ];
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -608,7 +620,81 @@ class _HomeContentState extends State<HomeContent> {
           ),
           const SizedBox(height: 10),
           const Text('Explore what is happening around you.'),
-          const SizedBox(height: 25),
+          const SizedBox(height: 18),
+          TextField(
+            controller: searchController,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: 'Search events, places or categories',
+              prefixIcon: const Icon(Icons.search, color: purple),
+              suffixIcon: searchController.text.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        searchController.clear();
+                        setState(() {});
+                      },
+                    ),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(vertical: 14),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'Explore by Category',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: darkPurple,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 42,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: homeCategories.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final item = homeCategories[index];
+                final selected = selectedCategory == item;
+                final icons = <String, IconData>{
+                  'All': Icons.grid_view,
+                  'Puja': Icons.temple_hindu,
+                  'Concert': Icons.music_note,
+                  'Sports': Icons.sports_cricket,
+                  'Fair': Icons.festival,
+                  'Expo': Icons.museum,
+                  'Dance Academy': Icons.music_video,
+                };
+                return ChoiceChip(
+                  avatar: Icon(icons[item] ?? Icons.category,
+                    size: 17, color: selected ? Colors.white : purple),
+                  label: Text(item),
+                  selected: selected,
+                  selectedColor: purple,
+                  backgroundColor: Colors.white,
+                  labelStyle: TextStyle(
+                    color: selected ? Colors.white : darkPurple,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  onSelected: (_) => setState(() => selectedCategory = item),
+                  side: BorderSide(color: selected ? purple : Colors.grey.shade300),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 22),
           const Text(
             'Nearby Events',
             style: TextStyle(
@@ -649,14 +735,40 @@ class _HomeContentState extends State<HomeContent> {
                 );
               }
 
-              final events = snapshot.data ?? [];
+              final allEvents = snapshot.data ?? [];
+              final query = searchController.text.trim().toLowerCase();
+              final events = allEvents.where((event) {
+                final matchesCategory = selectedCategory == 'All' ||
+                    (event['category']?.toString().toLowerCase() ?? '') ==
+                        selectedCategory.toLowerCase();
+                final searchable = [
+                  event['title'], event['category'], event['location_text'],
+                  event['landmark'], event['description'],
+                ].where((value) => value != null)
+                    .map((value) => value.toString().toLowerCase()).join(' ');
+                return matchesCategory && (query.isEmpty || searchable.contains(query));
+              }).toList();
 
-              if (events.isEmpty) {
+              if (allEvents.isEmpty) {
                 return const Padding(
                   padding: EdgeInsets.all(20),
                   child: Center(
                     child: Text(
                       'Abhi koi approved event available nahi hai.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                );
+              }
+
+              if (events.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.all(22),
+                  child: Center(
+                    child: Text(
+                      query.isNotEmpty || selectedCategory != 'All'
+                          ? 'Is category ya search mein koi event nahi mila.'
+                          : 'Abhi koi approved event available nahi hai.',
                       textAlign: TextAlign.center,
                     ),
                   ),

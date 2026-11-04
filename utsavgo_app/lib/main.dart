@@ -478,6 +478,12 @@ class _HomeContentState extends State<HomeContent> {
       nearby.sort((a, b) =>
           (a['_distance_meters'] as double)
               .compareTo(b['_distance_meters'] as double));
+
+      // Agar 50 km ke andar koi GPS-tagged event nahi mila,
+      // to approved events ko blank screen ki jagah dikhao.
+      // Isse purane ya bina coordinates wale events bhi visible rahenge.
+      if (nearby.isEmpty) return events;
+
       return nearby;
     } catch (_) {
       // GPS unavailable ho to approved events ko hide mat karo.

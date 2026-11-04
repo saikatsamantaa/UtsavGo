@@ -436,7 +436,53 @@ class _HomeContentState extends State<HomeContent> {
         .order('event_date', ascending: true)
         .order('event_time', ascending: true);
 
-    return List<Map<String, dynamic>>.from(response);
+    final events = List<Map<String, dynamic>>.from(response);
+
+    // GPS ke through nearby events ko distance ke hisaab se sort/filter karo.
+    try {
+      final serviceEnabled =
+          await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return events;
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return events;
+      }
+
+      final position = await Geolocator.getCurrentPosition();
+      final nearby = <Map<String, dynamic>>[];
+
+      for (final event in events) {
+        final lat = event['latitude'];
+        final lng = event['longitude'];
+        if (lat == null || lng == null) continue;
+
+        final distance = Geolocator.distanceBetween(
+          position.latitude,
+          position.longitude,
+          (lat as num).toDouble(),
+          (lng as num).toDouble(),
+        );
+
+        // Nearby radius: 50 km. Distance app ke andar use hoti hai.
+        if (distance <= 50000) {
+          event['_distance_meters'] = distance;
+          nearby.add(event);
+        }
+      }
+
+      nearby.sort((a, b) =>
+          (a['_distance_meters'] as double)
+              .compareTo(b['_distance_meters'] as double));
+      return nearby;
+    } catch (_) {
+      // GPS unavailable ho to approved events ko hide mat karo.
+      return events;
+    }
   }
 
   Future<void> refreshEvents() async {
@@ -1056,7 +1102,19 @@ class _MyEventsScreenState extends State<MyEventsScreen> {
                 final status = (e['status'] ?? 'pending').toString();
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),
-                  child: Padding(
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: status == 'approved'
+                        ? () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => EventDetailsScreen(event: e),
+                              ),
+                            );
+                          }
+                        : null,
+                    child: Padding(
                     padding: const EdgeInsets.all(15),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(e['title']?.toString() ?? 'Event',
@@ -1073,7 +1131,19 @@ class _MyEventsScreenState extends State<MyEventsScreen> {
                       ],
                       const SizedBox(height: 5),
                       Text('Submitted: ${e['created_at'] ?? ''}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                      if (status == 'approved') ...[
+                        const SizedBox(height: 8),
+                        const Row(
+                          children: [
+                            Icon(Icons.touch_app, size: 16, color: purple),
+                            SizedBox(width: 5),
+                            Text('Tap to view event details',
+                                style: TextStyle(color: purple, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ],
                     ]),
+                  ),
                   ),
                 );
               },
